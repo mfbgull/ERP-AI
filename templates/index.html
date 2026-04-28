@@ -308,6 +308,151 @@
             font-size: 1.5rem;
             cursor: pointer;
         }
+        
+        /* Invoice Modal - Paper Style */
+        .invoice-modal {
+            background: #fff;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 700px;
+            max-height: 90vh;
+            overflow-y: auto;
+            color: #333;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.5);
+        }
+        
+        .invoice-content {
+            padding: 2.5rem;
+        }
+        
+        .invoice-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            border-bottom: 3px solid #2563eb;
+            padding-bottom: 1rem;
+            margin-bottom: 2rem;
+        }
+        
+        .invoice-header h2 {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #2563eb;
+            letter-spacing: 0.15em;
+        }
+        
+        .invoice-no {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .invoice-partes {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 2rem;
+        }
+        
+        .invoice-parties {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+        
+        .invoice-from, .invoice-to {
+            font-size: 0.9rem;
+            line-height: 1.6;
+        }
+        
+        .invoice-from strong, .invoice-to strong {
+            color: #333;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        .invoice-dates {
+            display: flex;
+            justify-content: flex-end;
+            gap: 2rem;
+            margin-bottom: 2rem;
+            font-size: 0.9rem;
+        }
+        
+        .invoice-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 1.5rem;
+        }
+        
+        .invoice-table th {
+            background: #f8fafc;
+            padding: 0.75rem;
+            text-align: left;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #64748b;
+            border-bottom: 2px solid #e2e8f0;
+        }
+        
+        .invoice-table td {
+            padding: 0.75rem;
+            border-bottom: 1px solid #e2e8f0;
+            font-size: 0.9rem;
+        }
+        
+        .invoice-table tr:last-child td {
+            border-bottom: none;
+        }
+        
+        .invoice-totals {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 0.5rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .invoice-totals div {
+            display: flex;
+            justify-content: space-between;
+            width: 200px;
+            font-size: 0.9rem;
+        }
+        
+        .invoice-totals .invoice-total {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #2563eb;
+            border-top: 2px solid #2563eb;
+            padding-top: 0.5rem;
+        }
+        
+        .invoice-status {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        
+        .invoice-actions {
+            text-align: center;
+        }
+        
+        .btn-download {
+            display: inline-block;
+            padding: 0.75rem 1.5rem;
+            background: #2563eb;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+        
+        .btn-download:hover {
+            background: #1d4ed8;
+        }
     </style>
 </head>
 <body>
@@ -493,27 +638,56 @@
                 const resp = await fetch('/api/invoice/' + id);
                 const data = await resp.json();
                 
-                let html = '<div class="modal-overlay active" onclick="this.classList.remove(\'active\')">';
-                html += '<div class="modal" onclick="event.stopPropagation()">';
-                html += '<div class="modal-header"><h3>' + data.invoice.invoice_no + '</h3>';
-                html += '<button class="modal-close" onclick="document.querySelector(\'.modal-overlay\').classList.remove(\'active\')">&times;</button></div>';
-                html += '<div class="modal-body">';
-                html += '<p><strong>Customer:</strong> ' + data.invoice.customer_name + '</p>';
-                html += '<p><strong>Date:</strong> ' + data.invoice.invoice_date + '</p>';
-                html += '<p><strong>Due:</strong> ' + data.invoice.due_date + '</p>';
-                html += '<p><strong>Total:</strong> $' + data.invoice.total_amount + '</p>';
-                html += '<p><strong>Status:</strong> <span class="badge">' + data.invoice.status + '</span></p>';
-                html += '<h4 style="margin-top:1rem;">Items</h4>';
-                html += '<table class="data-table"><thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead><tbody>';
+                const inv = data.invoice;
+                const items = data.items;
                 
-                data.items.forEach(item => {
-                    html += '<tr><td>' + item.item_name + '</td><td>' + item.quantity + '</td><td>$' + item.unit_price + '</td><td>$' + item.amount + '</td></tr>';
+                // Calculate totals
+                const subtotal = inv.subtotal || items.reduce((s, i) => s + i.amount, 0);
+                const tax = inv.tax_amount || (subtotal * inv.tax_rate);
+                const total = inv.total_amount || subtotal + tax;
+                
+                let html = '<div class="modal-overlay active" onclick="this.classList.remove(\'active\')">';
+                html += '<div class="invoice-modal" onclick="event.stopPropagation()">';
+                html += '<div class="invoice-content">';
+                
+                // Invoice Header
+                html += '<div class="invoice-header"><h2>INVOICE</h2><span class="invoice-no">' + inv.invoice_no + '</span></div>';
+                
+                // Parties
+                html += '<div class="invoice-parties">';
+                html += '<div class="invoice-from"><strong>From:</strong><br>ERP AI Company<br>123 Business Ave</div>';
+                html += '<div class="invoice-to"><strong>Bill To:</strong><br>' + inv.customer_name + '</div>';
+                html += '</div>';
+                
+                // Dates
+                html += '<div class="invoice-dates"><div>Invoice Date: ' + inv.invoice_date + '</div><div>Due Date: ' + inv.due_date + '</div></div>';
+                
+                // Items Table
+                html += '<table class="invoice-table"><thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Amount</th></tr></thead><tbody>';
+                
+                items.forEach(item => {
+                    html += '<tr><td>' + item.item_name + '</td><td>' + item.quantity + '</td><td>$' + parseFloat(item.unit_price).toFixed(2) + '</td><td>$' + parseFloat(item.amount).toFixed(2) + '</td></tr>';
                 });
                 
+                // Empty rows for printer feel
+                for(let i = items.length; i < 5; i++) {
+                    html += '<tr><td colspan="4">&nbsp;</td></tr>';
+                }
+                
                 html += '</tbody></table>';
-                html += '<div style="margin-top:1rem;">';
-                html += '<a href="/api/invoice/' + id + '/pdf" class="btn-sm" target="_blank"><i class="fas fa-download"></i> Download PDF</a>';
-                html += '</div></div></div></div>';
+                
+                // Totals
+                html += '<div class="invoice-totals"><div><span>Subtotal:</span><span>$' + subtotal.toFixed(2) + '</span></div>';
+                html += '<div><span>Tax (' + (inv.tax_rate * 100) + '%):</span><span>$' + tax.toFixed(2) + '</span></div>';
+                html += '<div class="invoice-total"><span>Total:</span><span>$' + total.toFixed(2) + '</span></div></div>';
+                
+                // Status badge
+                html += '<div class="invoice-status"><span class="badge">' + inv.status + '</span></div>';
+                
+                // Actions
+                html += '<div class="invoice-actions"><a href="/api/invoice/' + id + '/pdf" class="btn-download" target="_blank">Download PDF</a></div>';
+                
+                html += '</div></div></div>';
                 
                 document.body.insertAdjacentHTML('beforeend', html);
             } catch (e) {

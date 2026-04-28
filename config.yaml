@@ -1,0 +1,24 @@
+database:
+  type: sqlite
+  path: ./data/erp.db
+
+ollama:
+  host: localhost
+  port: 11434
+  model: mistral
+  enabled: true
+
+llama_cpp:
+  host: localhost
+  port: 8000
+  enabled: true
+
+system:
+  retry_timeout: 5
+  max_retries: 3
+  auto_retry: true
+
+invoice:
+  prefix: "INV"
+  payment_terms_days: 30
+  default_tax_rate: 0.17

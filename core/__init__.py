@@ -1,0 +1,1 @@
+"""Core ERP AI modules."""

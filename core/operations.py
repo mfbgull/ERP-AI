@@ -15,25 +15,12 @@ class Operation:
         return self._handle_response(response)
     
     def _system_prompt(self) -> str:
-        return """You are an ERP AI Assistant. You help users manage invoices, inventory, customers, and sales.
+        return """You are an ERP AI assistant. 
 
-Schema:
-- customers(id, customer_code, customer_name, email, is_active)
-- items(id, item_code, item_name, category, unit_price, current_stock)
-- warehouses(id, warehouse_code, warehouse_name)
-- stock_balances(item_id, warehouse_id, quantity)
-- invoices(id, invoice_no, customer_id, total_amount, status)
-- invoice_items(invoice_id, item_id, quantity, unit_price)
-- invoice_drafts(id, customer_id, items_data, status)
+When user asks to view data, write a SQL query.
+Output format: SQL: <your query>
 
-Rules:
-1. Use parameterized queries
-2. Return results in a user-friendly format
-3. If no data found, say so clearly
-
-Output format:
-- SQL: <the SQL query to execute>
-- Then execute and return results"""
+That's it. No other text needed."""
     
     def _build_prompt(self, message: str, context):
         prompt = message
@@ -43,13 +30,22 @@ Output format:
         return prompt
     
     def _handle_response(self, response: str) -> str:
-        lines = response.strip().split('\n')
+        import re
         sql = None
         
-        for line in lines:
-            if line.startswith('SQL:'):
-                sql = line[4:].strip()
-                break
+        # Look for SQL in code blocks: ```sql ... ``` or ``` ... ```
+        sql_match = re.search(r'```sql\s*(.*?)\s*```', response, re.DOTALL | re.IGNORECASE)
+        if sql_match:
+            sql = sql_match.group(1).strip()
+        else:
+            # Look for SQL: prefix
+            for line in response.strip().split('\n'):
+                line = line.strip()
+                if line.startswith('SQL:'):
+                    sql = line[4:].strip()
+                    break
+                if line.startswith('```'):
+                    continue
         
         if not sql:
             return response
@@ -73,14 +69,21 @@ Output format:
             return "\n".join(f"{k}: {v}" for k, v in row.items())
         
         headers = list(rows[0].keys())
-        header_line = " | ".join(headers)
-        separator = "-" * len(header_line)
         
-        lines = [header_line, separator]
+        html = '<table class="data-table"><thead><tr>'
+        for h in headers:
+            html += f'<th>{h}</th>'
+        html += '</tr></thead><tbody>'
+        
         for row in rows:
-            lines.append(" | ".join(str(row.get(h, '')) for h in headers))
+            html += '<tr>'
+            for h in headers:
+                html += f'<td>{row.get(h, "")}</td>'
+            html += '</tr>'
         
-        return "\n".join(lines) + f"\n\n({len(rows)} rows)"
+        html += '</tbody></table>'
+        
+        return html + f' ({len(rows)} rows)'
     
     def create_invoice_draft(self, customer_id: int, customer_name: str, warehouse_id: int = 1) -> dict:
         invoice_date = datetime.now().strftime('%Y-%m-%d')

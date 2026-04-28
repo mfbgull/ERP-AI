@@ -1,24 +1,21 @@
 database:
-  type: sqlite
   path: ./data/erp.db
-
-ollama:
-  host: localhost
-  port: 11434
-  model: gemma3:1b
-  enabled: true
-
+  type: sqlite
+invoice:
+  default_tax_rate: 0.17
+  payment_terms_days: 30
+  prefix: INV
 llama_cpp:
+  enabled: false
   host: localhost
   port: 8080
+ollama:
   enabled: true
-
+  host: localhost
+  model: gemma3:270m
+  port: 11434
+  timeout: 120
 system:
-  retry_timeout: 5
-  max_retries: 3
   auto_retry: true
-
-invoice:
-  prefix: "INV"
-  payment_terms_days: 30
-  default_tax_rate: 0.17
+  max_retries: 3
+  retry_timeout: 5

@@ -133,6 +133,96 @@
             font-size: 0.85rem;
         }
         
+        .result-table-wrapper {
+            overflow-x: auto;
+            margin-top: 0.5rem;
+        }
+        
+        .result-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8rem;
+            background: var(--bg-darker);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        
+        .result-table th {
+            background: var(--primary);
+            color: white;
+            padding: 0.5rem 0.75rem;
+            text-align: left;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        
+        .result-table td {
+            padding: 0.4rem 0.75rem;
+            border-bottom: 1px solid var(--border);
+            white-space: nowrap;
+        }
+        
+        .result-table tr:nth-child(even) {
+            background: rgba(255,255,255,0.03);
+        }
+        
+        .result-table tr:hover {
+            background: rgba(37,99,235,0.1);
+        }
+        
+        .result-keyvalue {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+        
+        .result-keyvalue .kv-row {
+            display: flex;
+            gap: 0.5rem;
+            padding: 0.25rem 0;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .result-keyvalue .kv-key {
+            color: var(--primary);
+            font-weight: 600;
+            min-width: 80px;
+        }
+        
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8rem;
+            background: var(--bg-darker);
+            border-radius: 6px;
+            overflow: hidden;
+            margin-top: 0.5rem;
+        }
+        
+        .data-table th {
+            background: var(--primary);
+            color: white;
+            padding: 0.5rem 0.75rem;
+            text-align: left;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        
+        .data-table td {
+            padding: 0.4rem 0.75rem;
+            border-bottom: 1px solid var(--border);
+            white-space: nowrap;
+        }
+        
+        .data-table tr:nth-child(even) {
+            background: rgba(255,255,255,0.03);
+        }
+        
+        .data-table tr:hover {
+            background: rgba(37,99,235,0.1);
+        }
+        
         .chat-input-area {
             padding: 1rem 1.5rem;
             border-top: 1px solid var(--border);
@@ -168,6 +258,33 @@
             cursor: pointer;
             font-weight: 600;
             transition: all 0.2s;
+        }
+        
+        .btn-voice {
+            padding: 0.875rem 1.25rem;
+            background: var(--bg-darker);
+            color: var(--text-muted);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .btn-voice:hover {
+            color: var(--text);
+            border-color: var(--text-muted);
+        }
+        
+        .btn-voice.recording {
+            background: #dc3545;
+            color: white;
+            border-color: #dc3545;
+            animation: pulse 1s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
         }
         
         .btn-send:hover {
@@ -499,6 +616,9 @@
             </div>
             <div class="chat-input-area">
                 <form id="chatForm">
+                    <button type="button" class="btn-voice" id="voiceBtn" title="Voice input">
+                        <i class="fas fa-microphone"></i>
+                    </button>
                     <input type="text" class="chat-input" id="chatInput" placeholder="Ask a question..." autocomplete="off">
                     <button type="submit" class="btn-send">Send</button>
                 </form>
@@ -583,8 +703,78 @@
             }
         }
         
+        const voiceBtn = document.getElementById('voiceBtn');
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let isRecording = false;
+        
+        voiceBtn.onclick = () => {
+            if (isRecording) {
+                stopAudioRecording();
+            } else {
+                startAudioRecording();
+            }
+        };
+        
+        async function startAudioRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+                
+                mediaRecorder.ondataavailable = (e) => {
+                    audioChunks.push(e.data);
+                };
+                
+                mediaRecorder.onstop = async () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    const formData = new FormData();
+                    formData.append('audio', audioBlob, 'recording.webm');
+                    
+                    voiceBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                    
+                    try {
+                        const resp = await fetch('/api/transcribe', {
+                            method: 'POST',
+                            body: formData
+                        });
+                        const data = await resp.json();
+                        if (data.text) {
+                            chatInput.value = data.text;
+                            chatInput.focus();
+                        } else if (data.error) {
+                            alert('Transcription error: ' + data.error);
+                        }
+                    } catch (e) {
+                        alert('Error: ' + e.message);
+                    }
+                    
+                    voiceBtn.innerHTML = '<i class="fas fa-microphone"></i>';
+                    stream.getTracks().forEach(t => t.stop());
+                };
+                
+                mediaRecorder.start();
+                isRecording = true;
+                voiceBtn.classList.add('recording');
+                voiceBtn.innerHTML = '<i class="fas fa-stop"></i>';
+                
+            } catch (e) {
+                console.error('Audio error:', e);
+                alert('Could not access microphone: ' + e.message);
+            }
+        }
+        
+        function stopAudioRecording() {
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                mediaRecorder.stop();
+                isRecording = false;
+                voiceBtn.classList.remove('recording');
+            }
+        }
+        
         chatForm.addEventListener('submit', async (e) => {
             e.preventDefault();
+            console.log('Form submitted, message:', chatInput.value);
             const message = chatInput.value.trim();
             if (!message) return;
             
@@ -598,7 +788,9 @@
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({message})
                 });
+                console.log('Response status:', resp.status);
                 const data = await resp.json();
+                console.log('Response data:', data);
                 loadingIndicator.classList.remove('active');
                 
                 if (data.error) {
@@ -607,6 +799,7 @@
                     addMessage(data.response, 'assistant');
                 }
             } catch (e) {
+                console.error('Fetch error:', e);
                 loadingIndicator.classList.remove('active');
                 addMessage('Error: ' + e.message, 'assistant');
             }
@@ -618,13 +811,68 @@
             
             text = text.replace(/```(\w+)?/g, '');
             text = text.replace(/`/g, '');
+            text = text.replace(/SQL:.*/g, '');
             
-            let formatted = text
-                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                .replace(/\|/g, '</td><td>')
-                .replace(/\n/g, '<br>');
+            let html = '';
             
-            div.innerHTML = formatted;
+            if (text.includes('<table') && text.includes('</table>')) {
+                html = '<div class="result-table-wrapper">' + text + '</div>';
+            } else {
+                const lines = text.trim().split('\n').filter(l => l.trim());
+                const headerLine = lines[0] || '';
+                const rowLines = lines.slice(1).filter(l => l.includes('|'));
+                
+                if (headerLine.includes('|') && rowLines.length > 0) {
+                    const headers = headerLine.split('|').map(h => h.trim()).filter(h => h);
+                    
+                    html = '<div class="result-table-wrapper">';
+                    html += '<table class="result-table"><thead><tr>';
+                    headers.forEach(h => {
+                        html += '<th>' + h + '</th>';
+                    });
+                    html += '</tr></thead><tbody>';
+                    
+                    rowLines.forEach(row => {
+                        const cells = row.split('|').map(c => c.trim()).filter(c => c);
+                        html += '<tr>';
+                        cells.forEach((c, i) => {
+                            html += '<td>' + c + '</td>';
+                        });
+                        html += '</tr>';
+                    });
+                    
+                    html += '</tbody></table></div>';
+                } else if (text.includes('\n') && text.match(/^\w+\s*:\s*.+/m)) {
+                    html = '<div class="result-keyvalue">';
+                    text.split('\n').forEach(line => {
+                        const match = line.match(/^(\w+)\s*:\s*(.+)$/);
+                        if (match) {
+                            html += '<div class="kv-row"><span class="kv-key">' + match[1] + ':</span><span class="kv-value">' + match[2] + '</span></div>';
+                        }
+                    });
+                    html += '</div>';
+                } else {
+                    html = '<pre>' + text + '</pre>';
+                }
+            }
+            
+            div.innerHTML = html;
+            chatMessages.appendChild(div);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+                html = '<div class="result-keyvalue">';
+                text.split('\n').forEach(line => {
+                    const match = line.match(/^(\w+)\s*:\s*(.+)$/);
+                    if (match) {
+                        html += '<div class="kv-row"><span class="kv-key">' + match[1] + ':</span><span class="kv-value">' + match[2] + '</span></div>';
+                    }
+                });
+                html += '</div>';
+            } else {
+                html = '<pre>' + text + '</pre>';
+            }
+            
+            div.innerHTML = html;
             chatMessages.appendChild(div);
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }

@@ -21,6 +21,8 @@ class LLMHandler:
         port = cfg.get('port', 11434)
         model = cfg.get('model', 'mistral')
         
+        print(f"[OLLAMA] Using model: {model}, host: {host}:{port}")
+        
         full_prompt = f"{system_prompt}\n\nUser: {prompt}" if system_prompt else prompt
         
         response = requests.post(
@@ -30,8 +32,9 @@ class LLMHandler:
                 "prompt": full_prompt,
                 "stream": False
             },
-            timeout=60
+            timeout=120
         )
+        print(f"[OLLAMA] Response status: {response.status_code}")
         
         if response.status_code != 200:
             raise RuntimeError(f"Ollama error: {response.text}")
@@ -52,7 +55,7 @@ class LLMHandler:
                 "n_predict": 500,
                 "temperature": 0.7
             },
-            timeout=60
+            timeout=120
         )
         
         if response.status_code != 200:

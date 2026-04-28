@@ -59,24 +59,29 @@ fi
 
 echo
 
-python3 << EOF
+if [ "$PROVIDER" = "ollama" ]; then
+    python3 -c "
 import yaml
 with open('config.yaml', 'r') as f:
     config = yaml.safe_load(f)
-
-config['ollama']['enabled'] = $([ "$PROVIDER" = "ollama" ] && echo "true" || echo "false")
-config['llama_cpp']['enabled'] = $([ "$PROVIDER" = "llama_cpp" ] && echo "true" || echo "false")
-
+config['ollama']['enabled'] = True
+config['llama_cpp']['enabled'] = False
 with open('config.yaml', 'w') as f:
     yaml.dump(config, f, default_flow_style=False)
-EOF
+"
+    echo "Provider: ollama enabled"
 
-echo "Provider: $PROVIDER enabled"
-
-if [ "$PROVIDER" = "ollama" ]; then
     echo
     echo "Available models:"
-    MODELS=$(curl -s http://localhost:11434/api/tags | python3 -c "import json,sys; print('\n'.join([m['name'] for m in json.load(sys.stdin).get('models',[])]))" 2>/dev/null || echo "")
+    curl -s http://localhost:11434/api/tags > /tmp/ollama_models.json
+    MODELS=$(python3 << 'EOF'
+import json
+with open('/tmp/ollama_models.json') as f:
+    data = json.load(f)
+for m in data.get('models', []):
+    print(m['name'])
+EOF
+)
     
     if [ -z "$MODELS" ]; then
         echo "  ERROR: Could not fetch models from Ollama"
@@ -102,14 +107,23 @@ if [ "$PROVIDER" = "ollama" ]; then
 import yaml
 with open('config.yaml', 'r') as f:
     config = yaml.safe_load(f)
-
 config['ollama']['model'] = '$MODEL'
-
 with open('config.yaml', 'w') as f:
     yaml.dump(config, f, default_flow_style=False)
 EOF
     
     echo "Model: $MODEL selected"
+else
+    python3 -c "
+import yaml
+with open('config.yaml', 'r') as f:
+    config = yaml.safe_load(f)
+config['ollama']['enabled'] = False
+config['llama_cpp']['enabled'] = True
+with open('config.yaml', 'w') as f:
+    yaml.dump(config, f, default_flow_style=False)
+"
+    echo "Provider: llama.cpp enabled"
 fi
 
 echo
@@ -136,10 +150,18 @@ if [ ! -d ".venv" ]; then
     .venv/bin/pip install -q -r requirements.txt
 fi
 
+# Kill any existing process on port 5000
+if lsof -ti:5000 >/dev/null 2>&1; then
+    echo "Killing existing process on port 5000..."
+    lsof -ti:5000 | xargs kill -9 2>/dev/null || true
+    sleep 1
+fi
+
 if [ "$APP" = "web" ]; then
     echo "Starting Web UI..."
     echo "🌐 Open: http://localhost:5000"
-    .venv/bin/python web.py
+    setsid .venv/bin/gunicorn -w 1 --timeout 300 --threads 4 -b 0.0.0.0:5000 'web:app' > /dev/null 2>&1 &
+    sleep 3
 else
     echo "Starting CLI..."
     .venv/bin/python main.py

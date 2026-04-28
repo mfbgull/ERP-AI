@@ -1,5 +1,6 @@
 import uuid
 from flask import Flask, render_template, request, jsonify, send_file
+from flask_cors import CORS
 from core.startup import run_startup, check_ollama, check_llama_cpp
 from core.llm_handler import LLMHandler
 from core.operations import Operation
@@ -8,6 +9,13 @@ from core.database import Database
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'erp-ai-secret'
+CORS(app)
+
+@app.after_request
+def add_header(response):
+    if request.path.startswith('/api/'):
+        response.headers['Content-Type'] = 'application/json'
+    return response
 
 # Global state
 config, db = None, None
@@ -24,8 +32,8 @@ def get_ollama_models():
         resp = requests.get('http://localhost:11434/api/tags', timeout=2)
         if resp.status_code == 200:
             return [m['name'] for m in resp.json().get('models', [])]
-    except:
-        pass
+    except Exception as e:
+        print(f"Error fetching models: {e}")
     return []
 
 
@@ -63,13 +71,21 @@ def index():
 @app.route('/api/chat', methods=['POST'])
 def chat():
     import traceback
+    import time
+    start = time.time()
+    
+    if not config:
+        init_app()
+        print("[CHAT] Re-initialized app")
+    
     data = request.json
     user_message = data.get('message', '')
     
     if not user_message:
         return jsonify({'error': 'Empty message'}), 400
     
-    # Handle commands
+    print(f"[CHAT] Received: {user_message[:30]}")
+    
     if user_message.startswith('/'):
         return handle_command(user_message)
     
@@ -79,12 +95,28 @@ def chat():
         context = conversation.get_conversation_summary(current_session)
         
         if not llm_handler.current_provider:
-            return jsonify({'error': 'No LLM provider selected. Go to sidebar to select a model.'}), 400
+            print("[CHAT] ERROR: No provider")
+            return jsonify({'error': 'No LLM provider'}), 400
         
+        print(f"[CHAT] Provider: {llm_handler.current_provider}")
+        print(f"[CHAT] Calling operations.process...")
         result = operations.process(user_message, {
             'context': context,
             'current_customer': conversation.get_context(current_session).get('current_customer_name')
         })
+        print(f"[CHAT] Result length: {len(result)}")
+        
+        conversation.add_message(current_session, 'assistant', result)
+        
+        return jsonify({
+            'response': result,
+            'session': current_session[:8]
+        })
+        result = operations.process(user_message, {
+            'context': context,
+            'current_customer': conversation.get_context(current_session).get('current_customer_name')
+        })
+        print(f"[CHAT] operations.process done in {time.time()-start:.1f}s")
         
         conversation.add_message(current_session, 'assistant', result)
         
@@ -96,6 +128,7 @@ def chat():
         import sys
         exc_type = sys.exc_info()[0].__name__
         exc_trace = ''.join(traceback.format_exception(exc_type, e, e.__traceback__))[-500:]
+        print(f"[CHAT] Error: {exc_type}: {e}")
         
         return jsonify({
             'error': str(e),
@@ -216,9 +249,10 @@ def api_invoice_pdf(invoice_id):
 @app.route('/api/models', methods=['GET'])
 def api_models():
     models = get_ollama_models()
+    current_model = config['ollama']['model'] if config else 'gemma3:270m'
     return jsonify({
         'models': models,
-        'current': config['ollama']['model']
+        'current': current_model
     })
 
 
@@ -247,7 +281,39 @@ def format_results(rows):
     return "\n".join(lines)
 
 
+@app.route('/api/transcribe', methods=['POST'])
+def transcribe_audio():
+    from faster_whisper import WhisperModel
+    import tempfile
+    import os
+    
+    if 'audio' not in request.files:
+        return jsonify({'error': 'No audio file'}), 400
+    
+    audio_file = request.files['audio']
+    
+    if not hasattr(transcribe_audio, 'model'):
+        try:
+            transcribe_audio.model = WhisperModel("base", device="cpu", compute_type="int8")
+            print("Whisper model loaded")
+        except Exception as e:
+            return jsonify({'error': f'Failed to load model: {str(e)}'}), 500
+    
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.webm') as tmp:
+        audio_file.save(tmp)
+        tmp_path = tmp.name
+    
+    try:
+        segments, info = transcribe_audio.model.transcribe(tmp_path, beam_size=5)
+        text = ' '.join(segment.text for segment in segments)
+        return jsonify({'text': text.strip()})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        os.unlink(tmp_path)
+
+
 if __name__ == '__main__':
     init_app()
     print("\n🌐 Web UI: http://localhost:5000")
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000)

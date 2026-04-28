@@ -15,10 +15,22 @@ llm_handler = None
 operations = None
 conversation = None
 current_session = None
+available_models = []
+
+
+def get_ollama_models():
+    import requests
+    try:
+        resp = requests.get('http://localhost:11434/api/tags', timeout=2)
+        if resp.status_code == 200:
+            return [m['name'] for m in resp.json().get('models', [])]
+    except:
+        pass
+    return []
 
 
 def init_app():
-    global config, db, llm_handler, operations, conversation, current_session
+    global config, db, llm_handler, operations, conversation, current_session, available_models
     
     config, db = run_startup()
     llm_handler = LLMHandler(config)
@@ -26,9 +38,15 @@ def init_app():
     conversation = ConversationEngine(db)
     current_session = conversation.start_session()
     
-    # Auto-select provider
-    if check_ollama(config['ollama']['host'], config['ollama']['port']):
-        llm_handler.set_provider('ollama')
+    available_models = get_ollama_models()
+    
+    if available_models:
+        print(f"\nAvailable models: {', '.join(available_models)}")
+        if config['ollama']['model'] in available_models:
+            print(f"Using: {config['ollama']['model']}")
+        else:
+            config['ollama']['model'] = available_models[0]
+            print(f"Switched to: {config['ollama']['model']}")
     elif check_llama_cpp(config['llama_cpp']['host'], config['llama_cpp']['port']):
         llm_handler.set_provider('llama_cpp')
 
@@ -178,10 +196,24 @@ def api_invoice_pdf(invoice_id):
     return send_file(pdf_path, as_attachment=True)
 
 
-@app.route('/api/conversation', methods=['GET'])
-def api_conversation():
-    hist = conversation.get_history(current_session, limit=20)
-    return jsonify(hist)
+@app.route('/api/models', methods=['GET'])
+def api_models():
+    models = get_ollama_models()
+    return jsonify({
+        'models': models,
+        'current': config['ollama']['model']
+    })
+
+
+@app.route('/api/model/<path:model_name>', methods=['POST'])
+def api_set_model(model_name):
+    available = get_ollama_models()
+    if model_name not in available:
+        return jsonify({'error': f'Model {model_name} not available'}), 400
+    
+    config['ollama']['model'] = model_name
+    llm_handler.config['ollama']['model'] = model_name
+    return jsonify({'success': True, 'model': model_name})
 
 
 def format_results(rows):

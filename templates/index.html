@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ERP AI Assistant</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1d4ed8;
+            --bg-dark: #0f172a;
+            --bg-card: #1e293b;
+            --border: #334155;
+            --text: #e2e8f0;
+            --text-muted: #94a3b8;
+        }
+        
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .app-container {
+            display: grid;
+            grid-template-columns: 280px 1fr 350px;
+            height: 100vh;
+        }
+        
+        /* Sidebar */
+        .sidebar {
+            background: var(--bg-card);
+            border-right: 1px solid var(--border);
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        
+        .sidebar-header {
+            padding: 1rem 0;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .sidebar-header h1 {
+            font-size: 1.25rem;
+            color: var(--text);
+        }
+        
+        .sidebar-header h1 i {
+            color: var(--primary);
+            margin-right: 0.5rem;
+        }
+        
+        .nav-item {
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            color: var(--text-muted);
+        }
+        
+        .nav-item:hover, .nav-item.active {
+            background: rgba(37, 99, 235, 0.1);
+            color: var(--text);
+        }
+        
+        .nav-item.active {
+            border-left: 3px solid var(--primary);
+        }
+        
+        /* Main Chat Area */
+        .main-area {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        
+        .chat-header {
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--bg-card);
+        }
+        
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        
+        .message {
+            max-width: 80%;
+            padding: 1rem 1.25rem;
+            border-radius: 12px;
+            line-height: 1.5;
+        }
+        
+        .message.user {
+            align-self: flex-end;
+            background: var(--primary);
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+        
+        .message.assistant {
+            align-self: flex-start;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-bottom-left-radius: 4px;
+        }
+        
+        .message pre {
+            background: #0f172a;
+            padding: 0.75rem;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin-top: 0.5rem;
+            font-size: 0.85rem;
+        }
+        
+        .chat-input-area {
+            padding: 1rem 1.5rem;
+            border-top: 1px solid var(--border);
+            background: var(--bg-card);
+        }
+        
+        .chat-input-area form {
+            display: flex;
+            gap: 0.75rem;
+        }
+        
+        .chat-input {
+            flex: 1;
+            padding: 0.875rem 1.25rem;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: var(--bg-dark);
+            color: var(--text);
+            font-size: 1rem;
+        }
+        
+        .chat-input:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+        
+        .btn-send {
+            padding: 0.875rem 1.5rem;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+        
+        .btn-send:hover {
+            background: var(--primary-dark);
+        }
+        
+        /* Results Panel */
+        .results-panel {
+            background: var(--bg-card);
+            border-left: 1px solid var(--border);
+            padding: 1rem;
+            overflow-y: auto;
+        }
+        
+        .panel-header {
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+        
+        .data-table th, .data-table td {
+            padding: 0.5rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .data-table th {
+            color: var(--text-muted);
+            font-weight: 500;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+        }
+        
+        .data-table tr:hover td {
+            background: rgba(255,255,255,0.02);
+        }
+        
+        .badge {
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            background: rgba(37, 99, 235, 0.2);
+            color: #60a5fa;
+        }
+        
+        .btn-sm {
+            padding: 0.25rem 0.5rem;
+            font-size: 0.75rem;
+            border-radius: 4px;
+            border: none;
+            cursor: pointer;
+            background: var(--primary);
+            color: white;
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 0.5rem;
+        }
+        
+        .status-dot.online { background: #22c55e; }
+        .status-dot.offline { background: #ef4444; }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 1rem;
+            color: var(--text-muted);
+        }
+        
+        .loading.active { display: block; }
+        
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--border);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            display: inline-block;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        /* Invoice Detail Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal-overlay.active { display: flex; }
+        
+        .modal {
+            background: var(--bg-card);
+            border-radius: 12px;
+            width: 90%;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        
+        .modal-header {
+            padding: 1.25rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .modal-body {
+            padding: 1.25rem;
+        }
+        
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h1><i class="fas fa-robot"></i>ERP AI</h1>
+            </div>
+            <div class="nav-item active" data-panel="chat">
+                <i class="fas fa-comments"></i> Chat
+            </div>
+            <div class="nav-item" data-panel="customers">
+                <i class="fas fa-users"></i> Customers
+            </div>
+            <div class="nav-item" data-panel="items">
+                <i class="fas fa-box"></i> Items
+            </div>
+            <div class="nav-item" data-panel="invoices">
+                <i class="fas fa-file-invoice"></i> Invoices
+            </div>
+            <div style="margin-top: auto; padding: 1rem; border-top: 1px solid var(--border);">
+                <small style="color: var(--text-muted);">
+                    <span class="status-dot online"></span>Ollama: gemma3:1b
+                </small>
+            </div>
+        </div>
+        
+        <div class="main-area">
+            <div class="chat-header">
+                <span><i class="fas fa-comments"></i> AI Assistant</span>
+                <button class="btn-sm" onclick="clearChat()">Clear Chat</button>
+            </div>
+            <div class="chat-messages" id="chatMessages">
+                <div class="message assistant">
+                    Hello! I'm your ERP AI Assistant. Ask me anything about customers, items, invoices, or run queries like:
+                    <br><br>
+                    <i>• "Show all customers"</i>
+                    <br><i>• "Show items with price > 500"</i>
+                    <br><i>• "What's our total revenue?"</i>
+                </div>
+            </div>
+            <div class="chat-input-area">
+                <form id="chatForm">
+                    <input type="text" class="chat-input" id="chatInput" placeholder="Ask a question..." autocomplete="off">
+                    <button type="submit" class="btn-send">Send</button>
+                </form>
+            </div>
+            <div class="loading" id="loadingIndicator">
+                <span class="spinner"></span> Processing...
+            </div>
+        </div>
+        
+        <div class="results-panel" id="resultsPanel">
+            <div class="panel-header" id="panelTitle">Recent Data</div>
+            <div id="panelContent">
+                <p style="color: var(--text-muted);">Click on a sidebar option to view data.</p>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const chatForm = document.getElementById('chatForm');
+        const chatInput = document.getElementById('chatInput');
+        const chatMessages = document.getElementById('chatMessages');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const panelTitle = document.getElementById('panelTitle');
+        const panelContent = document.getElementById('panelContent');
+        
+        let navItems = document.querySelectorAll('.nav-item');
+        
+        navItems.forEach(item => {
+            item.addEventListener('click', () => {
+                navItems.forEach(n => n.classList.remove('active'));
+                item.classList.add('active');
+                loadPanel(item.dataset.panel);
+            });
+        });
+        
+        function loadPanel(panel) {
+            if (panel === 'chat') {
+                panelTitle.textContent = 'Quick Actions';
+                panelContent.innerHTML = '<p style="color: var(--text-muted);">Chat with AI for any query.</p>';
+            } else if (panel === 'customers') {
+                loadData('/api/customers', 'Customers', ['Name', 'Email', 'Code']);
+            } else if (panel === 'items') {
+                loadData('/api/items', 'Items', ['Name', 'Price', 'Stock', 'Code']);
+            } else if (panel === 'invoices') {
+                loadData('/api/invoices', 'Invoices', ['No', 'Customer', 'Total', 'Date']);
+            }
+        }
+        
+        async function loadData(endpoint, title, headers) {
+            panelTitle.textContent = title;
+            try {
+                const resp = await fetch(endpoint);
+                const data = await resp.json();
+                
+                if (!data.length) {
+                    panelContent.innerHTML = '<p style="color: var(--text-muted);">No data found.</p>';
+                    return;
+                }
+                
+                let html = '<table class="data-table"><thead><tr>';
+                headers.forEach(h => html += `<th>${h}</th>`);
+                if (title === 'Invoices') html += '<th>Action</th>';
+                html += '</tr></thead><tbody>';
+                
+                data.forEach(row => {
+                    html += '<tr>';
+                    if (title === 'Customers') {
+                        html += `<td>${row.customer_name}</td><td>${row.email || '-'}</td><td>${row.customer_code}</td>`;
+                    } else if (title === 'Items') {
+                        html += `<td>${row.item_name}</td><td>$${row.unit_price}</td><td>${row.current_stock}</td><td>${row.item_code}</td>`;
+                    } else if (title === 'Invoices') {
+                        html += `<td>${row.invoice_no}</td><td>${row.customer_name}</td><td>$${row.total_amount}</td><td>${row.invoice_date}</td>`;
+                        html += `<td><button class="btn-sm" onclick="viewInvoice(${row.id})">View</button></td>`;
+                    }
+                    html += '</tr>';
+                });
+                html += '</tbody></table>';
+                panelContent.innerHTML = html;
+            } catch (e) {
+                panelContent.innerHTML = `<p style="color: #ef4444;">Error: ${e.message}</p>`;
+            }
+        }
+        
+        chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const message = chatInput.value.trim();
+            if (!message) return;
+            
+            addMessage(message, 'user');
+            chatInput.value = '';
+            loadingIndicator.classList.add('active');
+            
+            try {
+                const resp = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({message})
+                });
+                const data = await resp.json();
+                loadingIndicator.classList.remove('active');
+                
+                if (data.error) {
+                    addMessage('Error: ' + data.error, 'assistant');
+                } else {
+                    addMessage(data.response, 'assistant');
+                }
+            } catch (e) {
+                loadingIndicator.classList.remove('active');
+                addMessage('Error: ' + e.message, 'assistant');
+            }
+        });
+        
+        function addMessage(text, role) {
+            const div = document.createElement('div');
+            div.className = 'message ' + role;
+            
+            text = text.replace(/```(\w+)?/g, '');
+            text = text.replace(/`/g, '');
+            
+            let formatted = text
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\|/g, '</td><td>')
+                .replace(/\n/g, '<br>');
+            
+            div.innerHTML = formatted;
+            chatMessages.appendChild(div);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+        
+        function clearChat() {
+            chatMessages.innerHTML = `<div class="message assistant">Chat cleared. How can I help?</div>`;
+        }
+        
+        async function viewInvoice(id) {
+            try {
+                const resp = await fetch('/api/invoice/' + id);
+                const data = await resp.json();
+                
+                let html = '<div class="modal-overlay active" onclick="this.classList.remove(\'active\')">';
+                html += '<div class="modal" onclick="event.stopPropagation()">';
+                html += '<div class="modal-header"><h3>' + data.invoice.invoice_no + '</h3>';
+                html += '<button class="modal-close" onclick="document.querySelector(\'.modal-overlay\').classList.remove(\'active\')">&times;</button></div>';
+                html += '<div class="modal-body">';
+                html += '<p><strong>Customer:</strong> ' + data.invoice.customer_name + '</p>';
+                html += '<p><strong>Date:</strong> ' + data.invoice.invoice_date + '</p>';
+                html += '<p><strong>Due:</strong> ' + data.invoice.due_date + '</p>';
+                html += '<p><strong>Total:</strong> $' + data.invoice.total_amount + '</p>';
+                html += '<p><strong>Status:</strong> <span class="badge">' + data.invoice.status + '</span></p>';
+                html += '<h4 style="margin-top:1rem;">Items</h4>';
+                html += '<table class="data-table"><thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead><tbody>';
+                
+                data.items.forEach(item => {
+                    html += '<tr><td>' + item.item_name + '</td><td>' + item.quantity + '</td><td>$' + item.unit_price + '</td><td>$' + item.amount + '</td></tr>';
+                });
+                
+                html += '</tbody></table>';
+                html += '<div style="margin-top:1rem;">';
+                html += '<a href="/api/invoice/' + id + '/pdf" class="btn-sm" target="_blank"><i class="fas fa-download"></i> Download PDF</a>';
+                html += '</div></div></div></div>';
+                
+                document.body.insertAdjacentHTML('beforeend', html);
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+        
+        loadPanel('customers');
+    </script>
+</body>
+</html>

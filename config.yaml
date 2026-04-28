@@ -5,12 +5,12 @@ database:
 ollama:
   host: localhost
   port: 11434
-  model: mistral
+  model: gemma3:1b
   enabled: true
 
 llama_cpp:
   host: localhost
-  port: 8000
+  port: 8080
   enabled: true
 
 system:

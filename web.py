@@ -47,8 +47,12 @@ def init_app():
         else:
             config['ollama']['model'] = available_models[0]
             print(f"Switched to: {config['ollama']['model']}")
+        llm_handler.set_provider('ollama')
     elif check_llama_cpp(config['llama_cpp']['host'], config['llama_cpp']['port']):
         llm_handler.set_provider('llama_cpp')
+        print("\nUsing: llama.cpp")
+    else:
+        print("\n⚠ No LLM provider available")
 
 
 @app.route('/')
@@ -58,6 +62,7 @@ def index():
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
+    import traceback
     data = request.json
     user_message = data.get('message', '')
     
@@ -72,6 +77,10 @@ def chat():
         conversation.add_message(current_session, 'user', user_message)
         
         context = conversation.get_conversation_summary(current_session)
+        
+        if not llm_handler.current_provider:
+            return jsonify({'error': 'No LLM provider selected. Go to sidebar to select a model.'}), 400
+        
         result = operations.process(user_message, {
             'context': context,
             'current_customer': conversation.get_context(current_session).get('current_customer_name')
@@ -84,7 +93,15 @@ def chat():
             'session': current_session[:8]
         })
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        import sys
+        exc_type = sys.exc_info()[0].__name__
+        exc_trace = ''.join(traceback.format_exception(exc_type, e, e.__traceback__))[-500:]
+        
+        return jsonify({
+            'error': str(e),
+            'type': exc_type,
+            'trace': exc_trace
+        }), 500
 
 
 def handle_command(cmd):

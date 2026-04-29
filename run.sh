@@ -59,42 +59,21 @@ show_provider_menu() {
         fi
     done
     echo
-    echo "Use ↑/↓ arrows, Enter to select"
+    echo "Type number and press Enter"
 }
 
 show_provider_menu
 
-while true; do
-    read -rsn1 key
-    case "$key" in
-        $'\x1b')
-            read -rsn1 key
-            if [ "$key" = "[" ]; then
-                read -rsn1 key
-                case "$key" in
-                    A)
-                        if [ $PROVIDER_IDX -gt 0 ]; then
-                            PROVIDER_IDX=$((PROVIDER_IDX - 1))
-                        fi
-                        ;;
-                    B)
-                        if [ $PROVIDER_IDX -lt $((PROVIDER_COUNT - 1)) ]; then
-                            PROVIDER_IDX=$((PROVIDER_IDX + 1))
-                        fi
-                        ;;
-                esac
-            fi
-            show_provider_menu
-            ;;
-        $'\x0d')
-            break
-            ;;
-    esac
-done
+read -p "Select (1-${PROVIDER_COUNT}): " num
+if [[ "$num" =~ ^[0-9]+$ ]] && [ "$num" -ge 1 ] && [ "$num" -le "$PROVIDER_COUNT" ]; then
+    PROVIDER_IDX=$((num - 1))
+else
+    PROVIDER_IDX=0
+fi
 
 PROVIDER="${PROVIDER_OPTS[$PROVIDER_IDX]}"
-echo
 echo "Selected: ${PROVIDER_NAMES[$PROVIDER_IDX]}"
+echo
 
 if [ "$PROVIDER" = "ollama" ]; then
     python3 -c "
@@ -110,27 +89,30 @@ with open('config.yaml', 'w') as f:
     echo
 
     curl -s http://localhost:11434/api/tags > /tmp/ollama_models.json
-
-    MODEL_OPTS=()
-    MODEL_NAMES=()
-
-    while IFS= read -r line; do
-        MODEL_OPTS+=("$line")
-        MODEL_NAMES+=("$line")
-    done < <(python3 << 'EOF'
+    python3 << 'EOF'
 import json
 with open('/tmp/ollama_models.json') as f:
     data = json.load(f)
-for m in data.get('models', []):
-    print(m['name'])
+models = [m['name'] for m in data.get('models', [])]
+print('\n'.join(models))
+with open('/tmp/model_list.txt', 'w') as f:
+    f.write('\n'.join(models))
 EOF
-)
-
+    cat /tmp/model_list.txt
+    
+    MODEL_OPTS=()
+    MODEL_NAMES=()
+    while IFS= read -r line; do
+        MODEL_OPTS+=("$line")
+        MODEL_NAMES+=("$line")
+    done < /tmp/model_list.txt
+    
     MODEL_IDX=0
     MODEL_COUNT=${#MODEL_NAMES[@]}
+    echo "Found $MODEL_COUNT models"
+    echo
 
     show_model_menu() {
-        echo
         echo "Select Model:"
         echo
         for i in "${!MODEL_NAMES[@]}"; do
@@ -140,39 +122,14 @@ EOF
                 echo "    ${MODEL_NAMES[$i]}"
             fi
         done
-        echo
-        echo "Use ↑/↓ arrows, Enter to select"
     }
 
     show_model_menu
 
-    while true; do
-        read -rsn1 key
-        case "$key" in
-            $'\x1b')
-                read -rsn1 key
-                if [ "$key" = "[" ]; then
-                    read -rsn1 key
-                    case "$key" in
-                        A)
-                            if [ $MODEL_IDX -gt 0 ]; then
-                                MODEL_IDX=$((MODEL_IDX - 1))
-                            fi
-                            ;;
-                        B)
-                            if [ $MODEL_IDX -lt $((MODEL_COUNT - 1)) ]; then
-                                MODEL_IDX=$((MODEL_IDX + 1))
-                            fi
-                            ;;
-                    esac
-                fi
-                show_model_menu
-                ;;
-            $'\x0d')
-                break
-                ;;
-        esac
-    done
+    read -p "Select (1-${MODEL_COUNT}): " num
+    if [[ "$num" =~ ^[0-9]+$ ]] && [ "$num" -ge 1 ] && [ "$num" -le "$MODEL_COUNT" ]; then
+        MODEL_IDX=$((num - 1))
+    fi
 
     MODEL="${MODEL_OPTS[$MODEL_IDX]}"
 
@@ -220,39 +177,14 @@ show_mode_menu() {
             echo "    ${MODE_NAMES[$i]}"
         fi
     done
-    echo
-    echo "Use ↑/↓ arrows, Enter to select"
 }
 
 show_mode_menu
 
-while true; do
-    read -rsn1 key
-    case "$key" in
-        $'\x1b')
-            read -rsn1 key
-            if [ "$key" = "[" ]; then
-                read -rsn1 key
-                case "$key" in
-                    A)
-                        if [ $MODE_IDX -gt 0 ]; then
-                            MODE_IDX=$((MODE_IDX - 1))
-                        fi
-                        ;;
-                    B)
-                        if [ $MODE_IDX -lt $((MODE_COUNT - 1)) ]; then
-                            MODE_IDX=$((MODE_IDX + 1))
-                        fi
-                        ;;
-                esac
-            fi
-            show_mode_menu
-            ;;
-        $'\x0d')
-            break
-            ;;
-    esac
-done
+read -p "Select (1-${MODE_COUNT}): " num
+if [[ "$num" =~ ^[0-9]+$ ]] && [ "$num" -ge 1 ] && [ "$num" -le "$MODE_COUNT" ]; then
+    MODE_IDX=$((num - 1))
+fi
 
 APP="${MODE_OPTS[$MODE_IDX]}"
 echo

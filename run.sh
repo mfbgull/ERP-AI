@@ -1,5 +1,4 @@
 #!/bin/bash
-
 set -e
 
 OLLAMA_AVAILABLE=false
@@ -21,8 +20,6 @@ echo
 
 if [ "$OLLAMA_AVAILABLE" = false ] && [ "$LLAMA_CPP_AVAILABLE" = false ]; then
     echo "ERROR: No LLM providers available!"
-    echo "Start Ollama: ollama serve"
-    echo "Start llama.cpp: ./server -c model.gguf"
     read -p "Press Enter to exit..."
     exit 1
 fi
@@ -43,12 +40,7 @@ fi
 PROVIDER_IDX=0
 PROVIDER_COUNT=${#PROVIDER_NAMES[@]}
 
-show_provider_menu() {
-    clear
-    echo "╔═══════════════════════════════════════╗"
-    echo "║       ERP AI Assistant               ║"
-    echo "╚═══════════════════════════════════════╝"
-    echo
+display_provider_menu() {
     echo "Select LLM Provider:"
     echo
     for i in "${!PROVIDER_NAMES[@]}"; do
@@ -59,23 +51,38 @@ show_provider_menu() {
         fi
     done
     echo
-    echo "Type number and press Enter"
+    echo "↑↓ to move, Enter to select"
 }
 
-show_provider_menu
+display_provider_menu
 
-if [ $PROVIDER_COUNT -eq 1 ]; then
-    PROVIDER_IDX=0
-    echo "Auto-selecting: ${PROVIDER_NAMES[0]}"
-else
-    read -p "Select (1-${PROVIDER_COUNT}): " num
-    if [[ "$num" =~ ^[0-9]+$ ]] && [ "$num" -ge 1 ] && [ "$num" -le "$PROVIDER_COUNT" ]; then
-        PROVIDER_IDX=$((num - 1))
-    fi
-fi
+while true; do
+    stty -icanon -echo min 1 time 0
+    key=$(dd bs=1 count=1 2>/dev/null)
+    stty sane
+    
+    case "$key" in
+        $'\x1b')
+            dd bs=1 count=1 2>/dev/null
+            key2=$(dd bs=1 count=1 2>/dev/null)
+            if [ "$key2" = "[" ]; then
+                key3=$(dd bs=1 count=1 2>/dev/null)
+                case "$key3" in
+                    A) PROVIDER_IDX=$((PROVIDER_IDX - 1 < 0 ? 0 : PROVIDER_IDX - 1)) ;;
+                    B) PROVIDER_IDX=$((PROVIDER_IDX + 1 >= PROVIDER_COUNT ? PROVIDER_COUNT - 1 : PROVIDER_IDX + 1)) ;;
+                esac
+            fi
+            display_provider_menu
+            ;;
+        $'\n'|$'\r')
+            break
+            ;;
+    esac
+done
 
-PROVIDER="${PROVIDER_OPTS[$PROVIDER_IDX]}"
+echo
 echo "Selected: ${PROVIDER_NAMES[$PROVIDER_IDX]}"
+PROVIDER="${PROVIDER_OPTS[$PROVIDER_IDX]}"
 echo
 
 if [ "$PROVIDER" = "ollama" ]; then
@@ -92,30 +99,27 @@ with open('config.yaml', 'w') as f:
     echo
 
     curl -s http://localhost:11434/api/tags > /tmp/ollama_models.json
-    python3 << 'EOF'
+    python3 << 'PYEOF'
 import json
 with open('/tmp/ollama_models.json') as f:
     data = json.load(f)
 models = [m['name'] for m in data.get('models', [])]
-print('\n'.join(models))
 with open('/tmp/model_list.txt', 'w') as f:
     f.write('\n'.join(models))
-EOF
-    cat /tmp/model_list.txt
-    
+print(len(models))
+PYEOF
+
     MODEL_OPTS=()
     MODEL_NAMES=()
     while IFS= read -r line; do
         MODEL_OPTS+=("$line")
         MODEL_NAMES+=("$line")
     done < /tmp/model_list.txt
-    
+
     MODEL_IDX=0
     MODEL_COUNT=${#MODEL_NAMES[@]}
-    echo "Found $MODEL_COUNT models"
-    echo
 
-    show_model_menu() {
+    display_model_menu() {
         echo "Select Model:"
         echo
         for i in "${!MODEL_NAMES[@]}"; do
@@ -125,20 +129,39 @@ EOF
                 echo "    ${MODEL_NAMES[$i]}"
             fi
         done
+        echo
+        echo "↑↓ to move, Enter to select"
     }
 
-show_model_menu
+    display_model_menu
 
-if [ $MODEL_COUNT -eq 1 ]; then
-    MODEL_IDX=0
-    echo "Auto-selecting: ${MODEL_NAMES[0]}"
-else
-    echo "Defaulting to model 1"
-    MODEL_IDX=0
-fi
+    while true; do
+        stty -icanon -echo min 1 time 0
+        key=$(dd bs=1 count=1 2>/dev/null)
+        stty sane
+        
+        case "$key" in
+            $'\x1b')
+                dd bs=1 count=1 2>/dev/null
+                key2=$(dd bs=1 count=1 2>/dev/null)
+                if [ "$key2" = "[" ]; then
+                    key3=$(dd bs=1 count=1 2>/dev/null)
+                    case "$key3" in
+                        A) MODEL_IDX=$((MODEL_IDX - 1 < 0 ? 0 : MODEL_IDX - 1)) ;;
+                        B) MODEL_IDX=$((MODEL_IDX + 1 >= MODEL_COUNT ? MODEL_COUNT - 1 : MODEL_IDX + 1)) ;;
+                    esac
+                fi
+                display_model_menu
+                ;;
+            $'\n'|$'\r')
+                break
+                ;;
+        esac
+    done
 
-MODEL="${MODEL_OPTS[$MODEL_IDX]}"
-echo "Selected: ${MODEL_NAMES[$MODEL_IDX]}"
+    echo
+    echo "Selected: ${MODEL_NAMES[$MODEL_IDX]}"
+    MODEL="${MODEL_OPTS[$MODEL_IDX]}"
 
     python3 -c "
 import yaml
@@ -148,9 +171,6 @@ config['ollama']['model'] = '$MODEL'
 with open('config.yaml', 'w') as f:
     yaml.dump(config, f, default_flow_style=False)
 "
-
-    echo
-    echo "Selected: $MODEL"
 else
     python3 -c "
 import yaml
@@ -165,7 +185,7 @@ with open('config.yaml', 'w') as f:
 fi
 
 echo
-echo "═══════════════════════════════"
+echo "═══════════════════════════════════════"
 echo
 
 MODE_OPTS=("web" "cli" "tui")
@@ -173,8 +193,7 @@ MODE_NAMES=("Web UI (browser)" "CLI (terminal)" "TUI (split panels)")
 MODE_IDX=0
 MODE_COUNT=3
 
-show_mode_menu() {
-    clear
+display_mode_menu() {
     echo "Select App Mode:"
     echo
     for i in "${!MODE_NAMES[@]}"; do
@@ -184,17 +203,40 @@ show_mode_menu() {
             echo "    ${MODE_NAMES[$i]}"
         fi
     done
+    echo
+    echo "↑↓ to move, Enter to select"
 }
 
-show_mode_menu
+display_mode_menu
 
-echo "Defaulting to mode 1"
-MODE_IDX=0
+while true; do
+    stty -icanon -echo min 1 time 0
+    key=$(dd bs=1 count=1 2>/dev/null)
+    stty sane
+    
+    case "$key" in
+        $'\x1b')
+            dd bs=1 count=1 2>/dev/null
+            key2=$(dd bs=1 count=1 2>/dev/null)
+            if [ "$key2" = "[" ]; then
+                key3=$(dd bs=1 count=1 2>/dev/null)
+                case "$key3" in
+                    A) MODE_IDX=$((MODE_IDX - 1 < 0 ? 0 : MODE_IDX - 1)) ;;
+                    B) MODE_IDX=$((MODE_IDX + 1 >= MODE_COUNT ? MODE_COUNT - 1 : MODE_IDX + 1)) ;;
+                esac
+            fi
+            display_mode_menu
+            ;;
+        $'\n'|$'\r')
+            break
+            ;;
+    esac
+done
 
-APP="${MODE_OPTS[$MODE_IDX]}"
-echo "Selected: ${MODE_NAMES[$MODE_IDX]}"
 echo
 echo "Selected: ${MODE_NAMES[$MODE_IDX]}"
+APP="${MODE_OPTS[$MODE_IDX]}"
+echo
 
 if [ ! -d ".venv" ]; then
     echo "Creating virtual environment..."

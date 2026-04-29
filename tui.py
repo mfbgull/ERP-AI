@@ -331,17 +331,21 @@ def run_tui(stdscr, config, db, llm, op, conv, session_id):
 
 
 def main(stdscr):
-    curses.curs_set(1)
-    curses.echo()
-    stdscr.nodelay(False)
+    try:
+        curses.curs_set(1)
+    except curses.error:
+        pass
     
-    config, db = run_startup()
+    config = load_config()
+    db = Database(config['database']['path'])
     
     ollama_ok = check_ollama(config['ollama']['host'], config['ollama']['port'])
     llamacpp_ok = check_llama_cpp(config['llama_cpp']['host'], config['llama_cpp']['port'])
     
     if not ollama_ok and not llamacpp_ok:
-        print("ERROR: No LLM providers available!")
+        stdscr.addstr(0, 0, "ERROR: No LLM providers available!")
+        stdscr.refresh()
+        stdscr.getch()
         return 1
         
     llm = LLMHandler(config)
@@ -361,4 +365,8 @@ def main(stdscr):
 
 
 if __name__ == "__main__":
-    curses.wrapper(main)
+    stdscr = curses.initscr()
+    try:
+        main(stdscr)
+    finally:
+        curses.endwin()

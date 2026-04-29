@@ -64,11 +64,14 @@ show_provider_menu() {
 
 show_provider_menu
 
-read -p "Select (1-${PROVIDER_COUNT}): " num
-if [[ "$num" =~ ^[0-9]+$ ]] && [ "$num" -ge 1 ] && [ "$num" -le "$PROVIDER_COUNT" ]; then
-    PROVIDER_IDX=$((num - 1))
-else
+if [ $PROVIDER_COUNT -eq 1 ]; then
     PROVIDER_IDX=0
+    echo "Auto-selecting: ${PROVIDER_NAMES[0]}"
+else
+    read -p "Select (1-${PROVIDER_COUNT}): " num
+    if [[ "$num" =~ ^[0-9]+$ ]] && [ "$num" -ge 1 ] && [ "$num" -le "$PROVIDER_COUNT" ]; then
+        PROVIDER_IDX=$((num - 1))
+    fi
 fi
 
 PROVIDER="${PROVIDER_OPTS[$PROVIDER_IDX]}"
@@ -124,14 +127,18 @@ EOF
         done
     }
 
-    show_model_menu
+show_model_menu
 
-    read -p "Select (1-${MODEL_COUNT}): " num
-    if [[ "$num" =~ ^[0-9]+$ ]] && [ "$num" -ge 1 ] && [ "$num" -le "$MODEL_COUNT" ]; then
-        MODEL_IDX=$((num - 1))
-    fi
+if [ $MODEL_COUNT -eq 1 ]; then
+    MODEL_IDX=0
+    echo "Auto-selecting: ${MODEL_NAMES[0]}"
+else
+    echo "Defaulting to model 1"
+    MODEL_IDX=0
+fi
 
-    MODEL="${MODEL_OPTS[$MODEL_IDX]}"
+MODEL="${MODEL_OPTS[$MODEL_IDX]}"
+echo "Selected: ${MODEL_NAMES[$MODEL_IDX]}"
 
     python3 -c "
 import yaml
@@ -181,12 +188,11 @@ show_mode_menu() {
 
 show_mode_menu
 
-read -p "Select (1-${MODE_COUNT}): " num
-if [[ "$num" =~ ^[0-9]+$ ]] && [ "$num" -ge 1 ] && [ "$num" -le "$MODE_COUNT" ]; then
-    MODE_IDX=$((num - 1))
-fi
+echo "Defaulting to mode 1"
+MODE_IDX=0
 
 APP="${MODE_OPTS[$MODE_IDX]}"
+echo "Selected: ${MODE_NAMES[$MODE_IDX]}"
 echo
 echo "Selected: ${MODE_NAMES[$MODE_IDX]}"
 

@@ -1,5 +1,4 @@
 #!/bin/bash
-set -e
 
 check_ollama() {
     curl -s http://localhost:11434/api/tags >/dev/null 2>&1
@@ -55,7 +54,7 @@ draw_menu() {
         else
             echo "    $name"
         fi
-        ((idx++))
+        idx=$((idx + 1))
     done
 }
 
@@ -66,11 +65,11 @@ interact_menu() {
     echo "↑↓ to move, Enter to select"
     
     while true; do
-        read -rsn1 key
+        IFS= read -rsn1 key
         case "$key" in
             $'\x1b')
-                read -rsn1 -t 0.1 key
-                [ "$key" = "[" ] && read -rsn1 -t 0.1 key
+                IFS= read -rsn1 -t 0.1 key
+                [ "$key" = "[" ] && IFS= read -rsn1 -t 0.1 key
                 case "$key" in
                     A) cur=$((cur - 1 < 0 ? 0 : cur - 1)) ;;
                     B) cur=$((cur + 1 >= ${#PROVIDER_NAMES[@]} ? ${#PROVIDER_NAMES[@]} - 1 : cur + 1)) ;;
@@ -135,7 +134,7 @@ PYEOF
             else
                 echo "    $name"
             fi
-            ((idx++))
+            idx=$((idx + 1))
         done
     }
 
@@ -145,11 +144,11 @@ PYEOF
         echo "↑↓ to move, Enter to select"
         
         while true; do
-            read -rsn1 key
+            IFS= read -rsn1 key
             case "$key" in
                 $'\x1b')
-                    read -rsn1 -t 0.1 key
-                    [ "$key" = "[" ] && read -rsn1 -t 0.1 key
+                    IFS= read -rsn1 -t 0.1 key
+                    [ "$key" = "[" ] && IFS= read -rsn1 -t 0.1 key
                     case "$key" in
                         A) cur=$((cur - 1 < 0 ? 0 : cur - 1)) ;;
                         B) cur=$((cur + 1 >= ${#MODEL_NAMES[@]} ? ${#MODEL_NAMES[@]} - 1 : cur + 1)) ;;
@@ -211,7 +210,7 @@ draw_menu() {
         else
             echo "    $name"
         fi
-        ((idx++))
+        idx=$((idx + 1))
     done
 }
 
@@ -221,11 +220,11 @@ interact_menu() {
     echo "↑↓ to move, Enter to select"
     
     while true; do
-        read -rsn1 key
+        IFS= read -rsn1 key
         case "$key" in
             $'\x1b')
-                read -rsn1 -t 0.1 key
-                [ "$key" = "[" ] && read -rsn1 -t 0.1 key
+                IFS= read -rsn1 -t 0.1 key
+                [ "$key" = "[" ] && IFS= read -rsn1 -t 0.1 key
                 case "$key" in
                     A) cur=$((cur - 1 < 0 ? 0 : cur - 1)) ;;
                     B) cur=$((cur + 1 >= ${#MODE_NAMES[@]} ? ${#MODE_NAMES[@]} - 1 : cur + 1)) ;;

@@ -70,6 +70,12 @@ while true; do
         fi
     elif [ "$code" -eq 10 ]; then
         break
+    elif [ "$code" -ge 49 ] && [ "$code" -le 57 ]; then
+        num=$((code - 48))
+        if [ $num -le $count ]; then
+            cur=$((num - 1))
+            break
+        fi
     fi
 done
 
@@ -146,6 +152,12 @@ with open('/tmp/model_list.txt', 'w') as f:
             fi
         elif [ "$code" -eq 10 ]; then
             break
+        elif [ "$code" -ge 49 ] && [ "$code" -le 57 ]; then
+            num=$((code - 48))
+            if [ $num -le $count ]; then
+                cur=$((num - 1))
+                break
+            fi
         fi
     done
 
@@ -219,6 +231,12 @@ while true; do
         fi
     elif [ "$code" -eq 10 ]; then
         break
+    elif [ "$code" -ge 49 ] && [ "$code" -le 51 ]; then
+        num=$((code - 48))
+        if [ $num -le $count ]; then
+            cur=$((num - 1))
+            break
+        fi
     fi
 done
 

@@ -1,14 +1,7 @@
 #!/bin/bash
 
-# ERP AI Assistant - Interactive Setup
-# Uses arrow keys + Enter for selection
-
 set -e
 
-# Check for required tools
-command -v python3 >/dev/null || { echo "Python3 required"; exit 1; }
-
-# Check LLM providers
 OLLAMA_AVAILABLE=false
 LLAMA_CPP_AVAILABLE=false
 
@@ -20,56 +13,89 @@ if curl -s http://localhost:8000/health >/dev/null 2>&1; then
     LLAMA_CPP_AVAILABLE=true
 fi
 
-# Show banner
 clear
 echo "╔═══════════════════════════════════════╗"
 echo "║       ERP AI Assistant               ║"
 echo "╚═══════════════════════════════════════╝"
 echo
 
-# No providers available
 if [ "$OLLAMA_AVAILABLE" = false ] && [ "$LLAMA_CPP_AVAILABLE" = false ]; then
     echo "ERROR: No LLM providers available!"
-    echo
-    echo "Please start one of:"
-    echo "  - Ollama:    ollama serve"
-    echo "  - llama.cpp: ./server -c model.gguf"
-    echo
+    echo "Start Ollama: ollama serve"
+    echo "Start llama.cpp: ./server -c model.gguf"
     read -p "Press Enter to exit..."
     exit 1
 fi
 
-# Show available providers
-echo "Select LLM Provider:"
-echo
-
-PROVIDER_OPTIONS=()
-PROVIDER_PROMPTS=()
+PROVIDER_OPTS=()
+PROVIDER_NAMES=()
 
 if [ "$OLLAMA_AVAILABLE" = true ]; then
-    PROVIDER_OPTIONS+=("ollama")
-    PROVIDER_PROMPTS+=("Ollama (local)")
+    PROVIDER_OPTS+=("ollama")
+    PROVIDER_NAMES+=("Ollama (local)")
 fi
 
 if [ "$LLAMA_CPP_AVAILABLE" = true ]; then
-    PROVIDER_OPTIONS+=("llama_cpp")
-    PROVIDER_PROMPTS+=("llama.cpp (local)")
+    PROVIDER_OPTS+=("llama_cpp")
+    PROVIDER_NAMES+=("llama.cpp (local)")
 fi
 
-# Use select for interactive menu
-PS3=$'\x1b[32m➤ Select: \x1b[0m '
-select choice in "${PROVIDER_PROMPTS[@]}"; do
-    if [ -n "$choice" ]; then
-        PROVIDER="${PROVIDER_OPTIONS[$((REPLY-1))]}"
-        break
-    fi
-done 2>/dev/null
+PROVIDER_IDX=0
+PROVIDER_COUNT=${#PROVIDER_NAMES[@]}
 
-echo
-echo "Selected: $choice"
-echo
+show_provider_menu() {
+    clear
+    echo "╔═══════════════════════════════════════╗"
+    echo "║       ERP AI Assistant               ║"
+    echo "╚═══════════════════════════════════════╝"
+    echo
+    echo "Select LLM Provider:"
+    echo
+    for i in "${!PROVIDER_NAMES[@]}"; do
+        if [ $i -eq $PROVIDER_IDX ]; then
+            echo "  ➤ ${PROVIDER_NAMES[$i]}"
+        else
+            echo "    ${PROVIDER_NAMES[$i]}"
+        fi
+    done
+    echo
+    echo "Use ↑/↓ arrows, Enter to select"
+}
 
-# Configure provider in config.yaml
+show_provider_menu
+
+while true; do
+    read -rsn1 key
+    case "$key" in
+        $'\x1b')
+            read -rsn1 key
+            if [ "$key" = "[" ]; then
+                read -rsn1 key
+                case "$key" in
+                    A)
+                        if [ $PROVIDER_IDX -gt 0 ]; then
+                            PROVIDER_IDX=$((PROVIDER_IDX - 1))
+                        fi
+                        ;;
+                    B)
+                        if [ $PROVIDER_IDX -lt $((PROVIDER_COUNT - 1)) ]; then
+                            PROVIDER_IDX=$((PROVIDER_IDX + 1))
+                        fi
+                        ;;
+                esac
+            fi
+            show_provider_menu
+            ;;
+        $'\x0d')
+            break
+            ;;
+    esac
+done
+
+PROVIDER="${PROVIDER_OPTS[$PROVIDER_IDX]}"
+echo
+echo "Selected: ${PROVIDER_NAMES[$PROVIDER_IDX]}"
+
 if [ "$PROVIDER" = "ollama" ]; then
     python3 -c "
 import yaml
@@ -83,14 +109,15 @@ with open('config.yaml', 'w') as f:
     echo "Provider: Ollama enabled"
     echo
 
-    # Fetch and select model
-    echo "Select Model:"
-    echo
-    
     curl -s http://localhost:11434/api/tags > /tmp/ollama_models.json
-    
-    # Read models into array
-    mapfile -t MODELS < <(python3 << 'EOF'
+
+    MODEL_OPTS=()
+    MODEL_NAMES=()
+
+    while IFS= read -r line; do
+        MODEL_OPTS+=("$line")
+        MODEL_NAMES+=("$line")
+    done < <(python3 << 'EOF'
 import json
 with open('/tmp/ollama_models.json') as f:
     data = json.load(f)
@@ -98,21 +125,57 @@ for m in data.get('models', []):
     print(m['name'])
 EOF
 )
-    
-    if [ ${#MODELS[@]} -eq 0 ]; then
-        echo "ERROR: No models found in Ollama"
-        exit 1
-    fi
-    
-    # Model selection menu
-    PS3=$'\x1b[32m➤ Select: \x1b[0m '
-    select choice in "${MODELS[@]}"; do
-        if [ -n "$choice" ]; then
-            MODEL="$choice"
-            break
-        fi
-    done 2>/dev/null
-    
+
+    MODEL_IDX=0
+    MODEL_COUNT=${#MODEL_NAMES[@]}
+
+    show_model_menu() {
+        echo
+        echo "Select Model:"
+        echo
+        for i in "${!MODEL_NAMES[@]}"; do
+            if [ $i -eq $MODEL_IDX ]; then
+                echo "  ➤ ${MODEL_NAMES[$i]}"
+            else
+                echo "    ${MODEL_NAMES[$i]}"
+            fi
+        done
+        echo
+        echo "Use ↑/↓ arrows, Enter to select"
+    }
+
+    show_model_menu
+
+    while true; do
+        read -rsn1 key
+        case "$key" in
+            $'\x1b')
+                read -rsn1 key
+                if [ "$key" = "[" ]; then
+                    read -rsn1 key
+                    case "$key" in
+                        A)
+                            if [ $MODEL_IDX -gt 0 ]; then
+                                MODEL_IDX=$((MODEL_IDX - 1))
+                            fi
+                            ;;
+                        B)
+                            if [ $MODEL_IDX -lt $((MODEL_COUNT - 1)) ]; then
+                                MODEL_IDX=$((MODEL_IDX + 1))
+                            fi
+                            ;;
+                    esac
+                fi
+                show_model_menu
+                ;;
+            $'\x0d')
+                break
+                ;;
+        esac
+    done
+
+    MODEL="${MODEL_OPTS[$MODEL_IDX]}"
+
     python3 -c "
 import yaml
 with open('config.yaml', 'r') as f:
@@ -121,7 +184,7 @@ config['ollama']['model'] = '$MODEL'
 with open('config.yaml', 'w') as f:
     yaml.dump(config, f, default_flow_style=False)
 "
-    
+
     echo
     echo "Selected: $MODEL"
 else
@@ -138,26 +201,63 @@ with open('config.yaml', 'w') as f:
 fi
 
 echo
-echo "═══════════════════════════════════════"
-echo
-echo "Select App Mode:"
+echo "═══════════════════════════════"
 echo
 
-# App mode selection
-PS3=$'\x1b[32m➤ Select: \x1b[0m '
-select choice in "Web UI (browser)" "CLI (terminal)" "TUI (split panels)"; do
-    case $REPLY in
-        1) APP="web"; break ;;
-        2) APP="cli"; break ;;
-        3) APP="tui"; break ;;
+MODE_OPTS=("web" "cli" "tui")
+MODE_NAMES=("Web UI (browser)" "CLI (terminal)" "TUI (split panels)")
+MODE_IDX=0
+MODE_COUNT=3
+
+show_mode_menu() {
+    clear
+    echo "Select App Mode:"
+    echo
+    for i in "${!MODE_NAMES[@]}"; do
+        if [ $i -eq $MODE_IDX ]; then
+            echo "  ➤ ${MODE_NAMES[$i]}"
+        else
+            echo "    ${MODE_NAMES[$i]}"
+        fi
+    done
+    echo
+    echo "Use ↑/↓ arrows, Enter to select"
+}
+
+show_mode_menu
+
+while true; do
+    read -rsn1 key
+    case "$key" in
+        $'\x1b')
+            read -rsn1 key
+            if [ "$key" = "[" ]; then
+                read -rsn1 key
+                case "$key" in
+                    A)
+                        if [ $MODE_IDX -gt 0 ]; then
+                            MODE_IDX=$((MODE_IDX - 1))
+                        fi
+                        ;;
+                    B)
+                        if [ $MODE_IDX -lt $((MODE_COUNT - 1)) ]; then
+                            MODE_IDX=$((MODE_IDX + 1))
+                        fi
+                        ;;
+                esac
+            fi
+            show_mode_menu
+            ;;
+        $'\x0d')
+            break
+            ;;
     esac
-done 2>/dev/null
+done
 
+APP="${MODE_OPTS[$MODE_IDX]}"
 echo
-echo "Selected: $choice"
-echo
+echo "Selected: ${MODE_NAMES[$MODE_IDX]}"
 
-# Setup virtual environment if needed
 if [ ! -d ".venv" ]; then
     echo "Creating virtual environment..."
     python3 -m venv .venv
@@ -165,18 +265,14 @@ if [ ! -d ".venv" ]; then
     echo "Virtual environment ready"
 fi
 
-# Kill any existing process on port 5000
 if lsof -ti:5000 >/dev/null 2>&1; then
-    echo "Killing existing process on port 5000..."
+    echo "Killing existing on port 5000..."
     lsof -ti:5000 | xargs kill -9 2>/dev/null || true
     sleep 1
 fi
 
 echo
-echo "═══════════════════════════════════════"
-echo
 
-# Launch app
 if [ "$APP" = "web" ]; then
     echo "Starting Web UI..."
     echo "Open: http://localhost:5000"

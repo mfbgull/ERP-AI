@@ -300,8 +300,10 @@ def run_tui(stdscr, config, db, llm, op, conv, session_id):
             conv.add_message(session_id, 'assistant', result)
 
 
-def main():
-    print("Initializing TUI...")
+def main(stdscr):
+    curses.curs_set(1)
+    curses.echo()
+    stdscr.nodelay(False)
     
     config, db = run_startup()
     
@@ -323,13 +325,10 @@ def main():
         
     session_id = conv.start_session()
     
-    def run(stdscr):
-        run_tui(stdscr, config, db, llm, op, conv, session_id)
-        
-    curses.wrapper(run)
+    run_tui(stdscr, config, db, llm, op, conv, session_id)
     
     return 0
 
 
 if __name__ == "__main__":
-    main()
+    curses.wrapper(main)

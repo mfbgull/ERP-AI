@@ -166,11 +166,7 @@ if [ "$APP" = "web" ]; then
     sleep 3
 elif [ "$APP" = "tui" ]; then
     echo "Starting TUI..."
-    .venv/bin/python -c "
-import curses
-import tui
-curses.wrapper(tui.main)
-"
+    .venv/bin/python -c "import curses; import tui; curses.wrapper(tui.main)"
 else
     echo "Starting CLI..."
     .venv/bin/python main.py

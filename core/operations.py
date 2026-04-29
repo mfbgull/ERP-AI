@@ -9,10 +9,10 @@ class Operation:
         self.db = db
         self.llm = llm
     
-    def process(self, user_message: str, context: dict = None) -> str:
+    def process(self, user_message: str, context: dict = None, output_format: str = 'text') -> str:
         prompt = self._build_prompt(user_message, context)
         response = self.llm.chat(prompt, self._system_prompt())
-        return self._handle_response(response)
+        return self._handle_response(response, output_format)
     
     def _system_prompt(self) -> str:
         return """You are an ERP AI assistant. 
@@ -29,16 +29,14 @@ That's it. No other text needed."""
                 prompt = f"Current customer: {context['current_customer']}\n\n{prompt}"
         return prompt
     
-    def _handle_response(self, response: str) -> str:
+    def _handle_response(self, response: str, output_format: str = 'text') -> str:
         import re
         sql = None
         
-        # Look for SQL in code blocks: ```sql ... ``` or ``` ... ```
         sql_match = re.search(r'```sql\s*(.*?)\s*```', response, re.DOTALL | re.IGNORECASE)
         if sql_match:
             sql = sql_match.group(1).strip()
         else:
-            # Look for SQL: prefix
             for line in response.strip().split('\n'):
                 line = line.strip()
                 if line.startswith('SQL:'):
@@ -53,14 +51,14 @@ That's it. No other text needed."""
         try:
             if sql.strip().upper().startswith('SELECT'):
                 results = self.db.execute(sql)
-                return self._format_results(results)
+                return self._format_results(results, output_format)
             else:
                 rowid = self.db.execute_write(sql)
                 return f"Operation completed. Rows affected: {rowid}"
         except Exception as e:
             return f"Error: {e}\n\nResponse: {response}"
     
-    def _format_results(self, rows: list) -> str:
+    def _format_results(self, rows: list, format: str = 'text') -> str:
         if not rows:
             return "No results found."
         
@@ -70,20 +68,37 @@ That's it. No other text needed."""
         
         headers = list(rows[0].keys())
         
-        html = '<table class="data-table"><thead><tr>'
-        for h in headers:
-            html += f'<th>{h}</th>'
-        html += '</tr></thead><tbody>'
+        if format == 'html':
+            html = '<table class="data-table"><thead><tr>'
+            for h in headers:
+                html += f'<th>{h}</th>'
+            html += '</tr></thead><tbody>'
+            
+            for row in rows:
+                html += '<tr>'
+                for h in headers:
+                    html += f'<td>{row.get(h, "")}</td>'
+                html += '</tr>'
+            
+            html += '</tbody></table>'
+            return html + f' ({len(rows)} rows)'
+        
+        col_widths = {h: len(h) for h in headers}
+        for row in rows:
+            for h in headers:
+                col_widths[h] = max(col_widths[h], len(str(row.get(h, ''))))
+        
+        lines = []
+        header_line = ' | '.join(h.ljust(col_widths[h]) for h in headers)
+        lines.append(header_line)
+        lines.append('-' * len(header_line))
         
         for row in rows:
-            html += '<tr>'
-            for h in headers:
-                html += f'<td>{row.get(h, "")}</td>'
-            html += '</tr>'
+            line = ' | '.join(str(row.get(h, '')).ljust(col_widths[h]) for h in headers)
+            lines.append(line)
         
-        html += '</tbody></table>'
-        
-        return html + f' ({len(rows)} rows)'
+        lines.append(f"({len(rows)} rows)")
+        return '\n'.join(lines)
     
     def create_invoice_draft(self, customer_id: int, customer_name: str, warehouse_id: int = 1) -> dict:
         invoice_date = datetime.now().strftime('%Y-%m-%d')

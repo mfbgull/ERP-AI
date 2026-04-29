@@ -146,6 +146,7 @@ def chat():
                     "current_customer_name"
                 ),
             },
+            output_format='html',
         )
         print(f"[CHAT] Result length: {len(result)}")
 

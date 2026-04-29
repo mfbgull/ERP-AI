@@ -28,13 +28,55 @@ PROVIDER_NAMES=()
 [ "$OLLAMA_AVAILABLE" = true ] && { PROVIDER_OPTS+=("ollama"); PROVIDER_NAMES+=("Ollama (local)"); }
 [ "$LLAMA_CPP_AVAILABLE" = true ] && { PROVIDER_OPTS+=("llama_cpp"); PROVIDER_NAMES+=("llama.cpp (local)"); }
 
-echo "Select LLM Provider:"
-select prov in "${PROVIDER_NAMES[@]}"; do
-    [ -n "$prov" ] && break
-done 2>/dev/null
-PROVIDER_IDX=$(($REPLY - 1))
-echo "Selected: ${PROVIDER_NAMES[$PROVIDER_IDX]}"
-PROVIDER="${PROVIDER_OPTS[$PROVIDER_IDX]}"
+stty -echo echonl 2>/dev/null
+
+draw_provider_menu() {
+    clear
+    echo "╔═══════════════════════════════════════╗"
+    echo "║       ERP AI Assistant               ║"
+    echo "╚═══════════════════════════════════════╝"
+    echo
+    echo "Select LLM Provider:"
+    echo
+    i=0
+    for name in "${PROVIDER_NAMES[@]}"; do
+        if [ $i -eq $cur ]; then echo "  ➤ $name"; else echo "    $name"; fi
+        i=$((i+1))
+    done
+    echo
+    echo "↑↓ arrows to move, Enter to select"
+}
+
+cur=0
+count=${#PROVIDER_NAMES[@]}
+draw_provider_menu
+
+while true; do
+    key=$(dd bs=1 count=1 2>/dev/null)
+    code=$(printf '%d' "'$key")
+    
+    if [ "$code" -eq 27 ]; then
+        dd bs=1 count=1 2>/dev/null
+        dd bs=1 count=1 2>/dev/null
+        key=$(dd bs=1 count=1 2>/dev/null)
+        code=$(printf '%d' "'$key")
+        
+        if [ "$code" -eq 65 ]; then
+            cur=$((cur - 1 < 0 ? 0 : cur - 1))
+            draw_provider_menu
+        elif [ "$code" -eq 66 ]; then
+            cur=$((cur + 1 >= count ? count - 1 : cur + 1))
+            draw_provider_menu
+        fi
+    elif [ "$code" -eq 10 ]; then
+        break
+    fi
+done
+
+stty sane 2>/dev/null
+echo
+echo "Selected: ${PROVIDER_NAMES[$cur]}"
+PROVIDER="${PROVIDER_OPTS[$cur]}"
 echo
 
 [ "$PROVIDER" = "ollama" ] && {
@@ -49,6 +91,7 @@ with open('config.yaml', 'w') as f:
 "
     echo "Provider: Ollama enabled"
     echo
+
     curl -s http://localhost:11434/api/tags > /tmp/ollama_models.json
     python3 -c "
 import json
@@ -66,13 +109,50 @@ with open('/tmp/model_list.txt', 'w') as f:
         MODEL_NAMES+=("$line")
     done < /tmp/model_list.txt
 
-    echo "Select Model:"
-    select model in "${MODEL_NAMES[@]}"; do
-        [ -n "$model" ] && break
-    done 2>/dev/null
-    MODEL_IDX=$(($REPLY - 1))
-    echo "Selected: ${MODEL_NAMES[$MODEL_IDX]}"
-    MODEL="${MODEL_OPTS[$MODEL_IDX]}"
+    stty -echo echonl 2>/dev/null
+    
+    draw_model_menu() {
+        echo "Select Model:"
+        echo
+        i=0
+        for name in "${MODEL_NAMES[@]}"; do
+            if [ $i -eq $cur ]; then echo "  ➤ $name"; else echo "    $name"; fi
+            i=$((i+1))
+        done
+        echo
+        echo "↑↓ arrows to move, Enter to select"
+    }
+
+    cur=0
+    count=${#MODEL_NAMES[@]}
+    draw_model_menu
+
+    while true; do
+        key=$(dd bs=1 count=1 2>/dev/null)
+        code=$(printf '%d' "'$key")
+        
+        if [ "$code" -eq 27 ]; then
+            dd bs=1 count=1 2>/dev/null
+            dd bs=1 count=1 2>/dev/null
+            key=$(dd bs=1 count=1 2>/dev/null)
+            code=$(printf '%d' "'$key")
+            
+            if [ "$code" -eq 65 ]; then
+                cur=$((cur - 1 < 0 ? 0 : cur - 1))
+                draw_model_menu
+            elif [ "$code" -eq 66 ]; then
+                cur=$((cur + 1 >= count ? count - 1 : cur + 1))
+                draw_model_menu
+            fi
+        elif [ "$code" -eq 10 ]; then
+            break
+        fi
+    done
+
+    stty sane 2>/dev/null
+    echo
+    echo "Selected: ${MODEL_NAMES[$cur]}"
+    MODEL="${MODEL_OPTS[$cur]}"
 
     python3 -c "
 import yaml
@@ -102,13 +182,50 @@ echo
 MODE_OPTS=("web" "cli" "tui")
 MODE_NAMES=("Web UI (browser)" "CLI (terminal)" "TUI (split panels)")
 
-echo "Select App Mode:"
-select mode in "${MODE_NAMES[@]}"; do
-    [ -n "$mode" ] && break
-done 2>/dev/null || MODE_IDX=0
-MODE_IDX=$(($REPLY - 1))
-echo "Selected: ${MODE_NAMES[$MODE_IDX]}"
-APP="${MODE_OPTS[$MODE_IDX]}"
+stty -echo echonl 2>/dev/null
+
+draw_mode_menu() {
+    echo "Select App Mode:"
+    echo
+    i=0
+    for name in "${MODE_NAMES[@]}"; do
+        if [ $i -eq $cur ]; then echo "  ➤ $name"; else echo "    $name"; fi
+        i=$((i+1))
+    done
+    echo
+    echo "↑↓ arrows to move, Enter to select"
+}
+
+cur=0
+count=3
+draw_mode_menu
+
+while true; do
+    key=$(dd bs=1 count=1 2>/dev/null)
+    code=$(printf '%d' "'$key")
+    
+    if [ "$code" -eq 27 ]; then
+        dd bs=1 count=1 2>/dev/null
+        dd bs=1 count=1 2>/dev/null
+        key=$(dd bs=1 count=1 2>/dev/null)
+        code=$(printf '%d' "'$key")
+        
+        if [ "$code" -eq 65 ]; then
+            cur=$((cur - 1 < 0 ? 0 : cur - 1))
+            draw_mode_menu
+        elif [ "$code" -eq 66 ]; then
+            cur=$((cur + 1 >= count ? count - 1 : cur + 1))
+            draw_mode_menu
+        fi
+    elif [ "$code" -eq 10 ]; then
+        break
+    fi
+done
+
+stty sane 2>/dev/null
+echo
+echo "Selected: ${MODE_NAMES[$cur]}"
+APP="${MODE_OPTS[$cur]}"
 echo
 
 [ ! -d ".venv" ] && {

@@ -86,16 +86,31 @@ class TUIScreen:
         title = color(" ERP AI Assistant ", Colors.BOLD + Colors.BRIGHT_WHITE)
         hint = color("[Ctrl+K: Command]", Colors.THEME_ACCENT)
         
-        self.stdscr.addstr(0, 0, title[:self.width-1])
-        self.stdscr.addstr(0, self.width - len(hint) - 1, hint)
+        try:
+            self.stdscr.addstr(0, 0, title[:self.width-1])
+        except curses.error:
+            pass
+        try:
+            self.stdscr.addstr(0, max(0, self.width - len(hint) - 1), hint[:self.width-1])
+        except curses.error:
+            pass
         
     def draw_border(self):
-        self.stdscr.addstr(1, 0, "═" * (self.width))
+        try:
+            self.stdscr.addstr(1, 0, "-" * min(self.width, self.width))
+        except curses.error:
+            pass
         
         for y in range(2, self.height - 1):
-            self.stdscr.addstr(y, self.chat_width, "│")
+            try:
+                self.stdscr.addstr(y, self.chat_width, "|")
+            except curses.error:
+                pass
             
-        self.stdscr.addstr(self.height - 1, 0, "═" * (self.width))
+        try:
+            self.stdscr.addstr(self.height - 1, 0, "-" * (self.width - 1))
+        except curses.error:
+            pass
         
     def draw_chat(self):
         max_lines = self.height - 5
@@ -110,11 +125,11 @@ class TUIScreen:
             prefix = color(f"  {role}: ", Colors.THEME_USER if role == "You" else Colors.THEME_AI)
             
             try:
-                self.stdscr.addstr(y, 0, prefix)
+                self.stdscr.addstr(y, 0, prefix[:self.chat_width-1])
             except curses.error:
                 pass
             
-            max_chars = self.chat_width - 4
+            max_chars = max(1, self.chat_width - 4)
             words = content.split()
             line = ""
             
@@ -125,7 +140,7 @@ class TUIScreen:
                 else:
                     if line:
                         try:
-                            self.stdscr.addstr(y, 0, "  " + line)
+                            self.stdscr.addstr(y, 0, ("  " + line)[:self.chat_width-1])
                             y += 1
                             if y >= self.height - 2:
                                 break
@@ -135,7 +150,7 @@ class TUIScreen:
                     
             if line and y < self.height - 2:
                 try:
-                    self.stdscr.addstr(y, 0, "  " + line)
+                    self.stdscr.addstr(y, 0, ("  " + line)[:self.chat_width-1])
                 except curses.error:
                     pass
                     
@@ -155,20 +170,29 @@ class TUIScreen:
             pass
             
     def draw_data_panel(self):
+        if self.data_x >= self.width:
+            return
+            
         x = self.data_x + 1
         tab_y = 2
         
         hist_label = "  History  "
-        if self.active_tab == "history":
-            self.stdscr.addstr(tab_y, x, hist_label, curses.A_REVERSE)
-        else:
-            self.stdscr.addstr(tab_y, x, hist_label)
+        try:
+            if self.active_tab == "history":
+                self.stdscr.addstr(tab_y, x, hist_label, curses.A_REVERSE)
+            else:
+                self.stdscr.addstr(tab_y, x, hist_label)
+        except curses.error:
+            pass
             
         ctx_label = "  Context "
-        if self.active_tab == "context":
-            self.stdscr.addstr(tab_y, x + 12, ctx_label, curses.A_REVERSE)
-        else:
-            self.stdscr.addstr(tab_y, x + 12, ctx_label)
+        try:
+            if self.active_tab == "context":
+                self.stdscr.addstr(tab_y, x + 12, ctx_label, curses.A_REVERSE)
+            else:
+                self.stdscr.addstr(tab_y, x + 12, ctx_label)
+        except curses.error:
+            pass
             
         content_y = tab_y + 2
         
@@ -177,11 +201,17 @@ class TUIScreen:
                 if content_y + i >= self.height - 2:
                     break
                 role, text = msg
-                self.stdscr.addstr(content_y + i, x, f"{role}: "[:self.width - x - 2])
+                try:
+                    self.stdscr.addstr(content_y + i, x, f"{role}: "[:self.width - x - 2])
+                except curses.error:
+                    pass
         else:
-            self.stdscr.addstr(content_y, x, f"Session: {self.session_id[:8]}...")
-            self.stdscr.addstr(content_y + 1, x, f"Model: {self.config.get('ollama', {}).get('model', 'N/A')}")
-            self.stdscr.addstr(content_y + 2, x, f"Provider: {self.llm.current_provider}")
+            try:
+                self.stdscr.addstr(content_y, x, f"Session: {self.session_id[:8]}...")
+                self.stdscr.addstr(content_y + 1, x, f"Model: {self.config.get('ollama', {}).get('model', 'N/A')}")
+                self.stdscr.addstr(content_y + 2, x, f"Provider: {self.llm.current_provider}")
+            except curses.error:
+                pass
             
     def handle_command(self, cmd):
         cmd = cmd.strip().lower()

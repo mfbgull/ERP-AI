@@ -37,50 +37,16 @@ if [ "$LLAMA_CPP_AVAILABLE" = true ]; then
     PROVIDER_NAMES+=("llama.cpp (local)")
 fi
 
-PROVIDER_IDX=0
-PROVIDER_COUNT=${#PROVIDER_NAMES[@]}
-
-display_provider_menu() {
-    echo "Select LLM Provider:"
-    echo
-    for i in "${!PROVIDER_NAMES[@]}"; do
-        if [ $i -eq $PROVIDER_IDX ]; then
-            echo "  ➤ ${PROVIDER_NAMES[$i]}"
-        else
-            echo "    ${PROVIDER_NAMES[$i]}"
-        fi
-    done
-    echo
-    echo "↑↓ to move, Enter to select"
-}
-
-display_provider_menu
-
-while true; do
-    stty -icanon -echo min 1 time 0
-    key=$(dd bs=1 count=1 2>/dev/null)
-    stty sane
-    
-    case "$key" in
-        $'\x1b')
-            dd bs=1 count=1 2>/dev/null
-            key2=$(dd bs=1 count=1 2>/dev/null)
-            if [ "$key2" = "[" ]; then
-                key3=$(dd bs=1 count=1 2>/dev/null)
-                case "$key3" in
-                    A) PROVIDER_IDX=$((PROVIDER_IDX - 1 < 0 ? 0 : PROVIDER_IDX - 1)) ;;
-                    B) PROVIDER_IDX=$((PROVIDER_IDX + 1 >= PROVIDER_COUNT ? PROVIDER_COUNT - 1 : PROVIDER_IDX + 1)) ;;
-                esac
-            fi
-            display_provider_menu
-            ;;
-        $'\n'|$'\r')
-            break
-            ;;
-    esac
-done
-
+echo "Select LLM Provider:"
 echo
+PS3="➤ "
+select choice in "${PROVIDER_NAMES[@]}"; do
+    if [ -n "$choice" ]; then
+        PROVIDER_IDX=$((REPLY - 1))
+        break
+    fi
+done 2>/dev/null || PROVIDER_IDX=0
+
 echo "Selected: ${PROVIDER_NAMES[$PROVIDER_IDX]}"
 PROVIDER="${PROVIDER_OPTS[$PROVIDER_IDX]}"
 echo
@@ -116,50 +82,16 @@ PYEOF
         MODEL_NAMES+=("$line")
     done < /tmp/model_list.txt
 
-    MODEL_IDX=0
-    MODEL_COUNT=${#MODEL_NAMES[@]}
-
-    display_model_menu() {
-        echo "Select Model:"
-        echo
-        for i in "${!MODEL_NAMES[@]}"; do
-            if [ $i -eq $MODEL_IDX ]; then
-                echo "  ➤ ${MODEL_NAMES[$i]}"
-            else
-                echo "    ${MODEL_NAMES[$i]}"
-            fi
-        done
-        echo
-        echo "↑↓ to move, Enter to select"
-    }
-
-    display_model_menu
-
-    while true; do
-        stty -icanon -echo min 1 time 0
-        key=$(dd bs=1 count=1 2>/dev/null)
-        stty sane
-        
-        case "$key" in
-            $'\x1b')
-                dd bs=1 count=1 2>/dev/null
-                key2=$(dd bs=1 count=1 2>/dev/null)
-                if [ "$key2" = "[" ]; then
-                    key3=$(dd bs=1 count=1 2>/dev/null)
-                    case "$key3" in
-                        A) MODEL_IDX=$((MODEL_IDX - 1 < 0 ? 0 : MODEL_IDX - 1)) ;;
-                        B) MODEL_IDX=$((MODEL_IDX + 1 >= MODEL_COUNT ? MODEL_COUNT - 1 : MODEL_IDX + 1)) ;;
-                    esac
-                fi
-                display_model_menu
-                ;;
-            $'\n'|$'\r')
-                break
-                ;;
-        esac
-    done
-
+    echo "Select Model:"
     echo
+    PS3="➤ "
+    select choice in "${MODEL_NAMES[@]}"; do
+        if [ -n "$choice" ]; then
+            MODEL_IDX=$((REPLY - 1))
+            break
+        fi
+    done 2>/dev/null || MODEL_IDX=0
+
     echo "Selected: ${MODEL_NAMES[$MODEL_IDX]}"
     MODEL="${MODEL_OPTS[$MODEL_IDX]}"
 
@@ -190,50 +122,17 @@ echo
 
 MODE_OPTS=("web" "cli" "tui")
 MODE_NAMES=("Web UI (browser)" "CLI (terminal)" "TUI (split panels)")
-MODE_IDX=0
-MODE_COUNT=3
 
-display_mode_menu() {
-    echo "Select App Mode:"
-    echo
-    for i in "${!MODE_NAMES[@]}"; do
-        if [ $i -eq $MODE_IDX ]; then
-            echo "  ➤ ${MODE_NAMES[$i]}"
-        else
-            echo "    ${MODE_NAMES[$i]}"
-        fi
-    done
-    echo
-    echo "↑↓ to move, Enter to select"
-}
-
-display_mode_menu
-
-while true; do
-    stty -icanon -echo min 1 time 0
-    key=$(dd bs=1 count=1 2>/dev/null)
-    stty sane
-    
-    case "$key" in
-        $'\x1b')
-            dd bs=1 count=1 2>/dev/null
-            key2=$(dd bs=1 count=1 2>/dev/null)
-            if [ "$key2" = "[" ]; then
-                key3=$(dd bs=1 count=1 2>/dev/null)
-                case "$key3" in
-                    A) MODE_IDX=$((MODE_IDX - 1 < 0 ? 0 : MODE_IDX - 1)) ;;
-                    B) MODE_IDX=$((MODE_IDX + 1 >= MODE_COUNT ? MODE_COUNT - 1 : MODE_IDX + 1)) ;;
-                esac
-            fi
-            display_mode_menu
-            ;;
-        $'\n'|$'\r')
-            break
-            ;;
-    esac
-done
-
+echo "Select App Mode:"
 echo
+PS3="➤ "
+select choice in "${MODE_NAMES[@]}"; do
+    if [ -n "$choice" ]; then
+        MODE_IDX=$((REPLY - 1))
+        break
+    fi
+done 2>/dev/null || MODE_IDX=0
+
 echo "Selected: ${MODE_NAMES[$MODE_IDX]}"
 APP="${MODE_OPTS[$MODE_IDX]}"
 echo

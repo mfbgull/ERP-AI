@@ -131,6 +131,7 @@ echo "════════════════════════�
 echo "Select app mode:"
 echo "  1. Web UI (browser)"
 echo "  2. CLI (terminal)"
+echo "  3. TUI (terminal - split panels)"
 echo
 
 while true; do
@@ -138,7 +139,8 @@ while true; do
     case $MODE_CHOICE in
         1) APP="web"; break ;;
         2) APP="cli"; break ;;
-        *) echo "Invalid. Enter 1 or 2" ;;
+        3) APP="tui"; break ;;
+        *) echo "Invalid. Enter 1, 2, or 3" ;;
     esac
 done
 
@@ -159,9 +161,16 @@ fi
 
 if [ "$APP" = "web" ]; then
     echo "Starting Web UI..."
-    echo "🌐 Open: http://localhost:5000"
+    echo "Open: http://localhost:5000"
     setsid .venv/bin/gunicorn -w 1 --timeout 300 --threads 4 -b 0.0.0.0:5000 'web:app' > /dev/null 2>&1 &
     sleep 3
+elif [ "$APP" = "tui" ]; then
+    echo "Starting TUI..."
+    .venv/bin/python -c "
+import curses
+import tui
+curses.wrapper(tui.main)
+"
 else
     echo "Starting CLI..."
     .venv/bin/python main.py

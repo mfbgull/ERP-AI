@@ -65,7 +65,7 @@ interact_menu() {
     echo "↑↓ to move, Enter to select"
     
     while true; do
-        IFS= read -rsn1 key
+        IFS= read -rsn1 key || continue
         case "$key" in
             $'\x1b')
                 IFS= read -rsn1 -t 0.1 key
@@ -87,6 +87,11 @@ interact_menu() {
 }
 
 interact_menu
+
+PROVIDER="${PROVIDER_OPTS[$cur]}"
+echo
+echo "Selected: ${PROVIDER_NAMES[$cur]}"
+echo
 
 PROVIDER="${PROVIDER_OPTS[$cur]}"
 echo

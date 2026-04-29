@@ -1,15 +1,24 @@
 #!/bin/bash
 set -e
 
-OLLAMA_AVAILABLE=false
-LLAMA_CPP_AVAILABLE=false
+check_ollama() {
+    curl -s http://localhost:11434/api/tags >/dev/null 2>&1
+}
 
-if curl -s http://localhost:11434/api/tags >/dev/null 2>&1; then
+check_llamacpp() {
+    curl -s http://localhost:8000/health >/dev/null 2>&1
+}
+
+if check_ollama; then
     OLLAMA_AVAILABLE=true
+else
+    OLLAMA_AVAILABLE=false
 fi
 
-if curl -s http://localhost:8000/health >/dev/null 2>&1; then
+if check_llamacpp; then
     LLAMA_CPP_AVAILABLE=true
+else
+    LLAMA_CPP_AVAILABLE=false
 fi
 
 clear
@@ -37,18 +46,52 @@ if [ "$LLAMA_CPP_AVAILABLE" = true ]; then
     PROVIDER_NAMES+=("llama.cpp (local)")
 fi
 
-echo "Select LLM Provider:"
-echo
-PS3="➤ "
-select choice in "${PROVIDER_NAMES[@]}"; do
-    if [ -n "$choice" ]; then
-        PROVIDER_IDX=$((REPLY - 1))
-        break
-    fi
-done 2>/dev/null || PROVIDER_IDX=0
+draw_menu() {
+    local idx=0
+    local name
+    for name in "${PROVIDER_NAMES[@]}"; do
+        if [ $idx -eq $cur ]; then
+            echo "  ➤ $name"
+        else
+            echo "    $name"
+        fi
+        ((idx++))
+    done
+}
 
-echo "Selected: ${PROVIDER_NAMES[$PROVIDER_IDX]}"
-PROVIDER="${PROVIDER_OPTS[$PROVIDER_IDX]}"
+interact_menu() {
+    cur=0
+    draw_menu
+    echo
+    echo "↑↓ to move, Enter to select"
+    
+    while true; do
+        read -rsn1 key
+        case "$key" in
+            $'\x1b')
+                read -rsn1 -t 0.1 key
+                [ "$key" = "[" ] && read -rsn1 -t 0.1 key
+                case "$key" in
+                    A) cur=$((cur - 1 < 0 ? 0 : cur - 1)) ;;
+                    B) cur=$((cur + 1 >= ${#PROVIDER_NAMES[@]} ? ${#PROVIDER_NAMES[@]} - 1 : cur + 1)) ;;
+                esac
+                echo
+                draw_menu
+                echo
+                echo "↑↓ to move, Enter to select"
+                ;;
+            $'\n'|$'\r')
+                break
+                ;;
+        esac
+    done
+}
+
+interact_menu
+
+PROVIDER="${PROVIDER_OPTS[$cur]}"
+echo
+echo "Selected: ${PROVIDER_NAMES[$cur]}"
 echo
 
 if [ "$PROVIDER" = "ollama" ]; then
@@ -82,18 +125,53 @@ PYEOF
         MODEL_NAMES+=("$line")
     done < /tmp/model_list.txt
 
-    echo "Select Model:"
-    echo
-    PS3="➤ "
-    select choice in "${MODEL_NAMES[@]}"; do
-        if [ -n "$choice" ]; then
-            MODEL_IDX=$((REPLY - 1))
-            break
-        fi
-    done 2>/dev/null || MODEL_IDX=0
+    cur=0
+    draw_menu() {
+        local idx=0
+        local name
+        for name in "${MODEL_NAMES[@]}"; do
+            if [ $idx -eq $cur ]; then
+                echo "  ➤ $name"
+            else
+                echo "    $name"
+            fi
+            ((idx++))
+        done
+    }
 
-    echo "Selected: ${MODEL_NAMES[$MODEL_IDX]}"
-    MODEL="${MODEL_OPTS[$MODEL_IDX]}"
+    interact_menu() {
+        draw_menu
+        echo
+        echo "↑↓ to move, Enter to select"
+        
+        while true; do
+            read -rsn1 key
+            case "$key" in
+                $'\x1b')
+                    read -rsn1 -t 0.1 key
+                    [ "$key" = "[" ] && read -rsn1 -t 0.1 key
+                    case "$key" in
+                        A) cur=$((cur - 1 < 0 ? 0 : cur - 1)) ;;
+                        B) cur=$((cur + 1 >= ${#MODEL_NAMES[@]} ? ${#MODEL_NAMES[@]} - 1 : cur + 1)) ;;
+                    esac
+                    echo
+                    draw_menu
+                    echo
+                    echo "↑↓ to move, Enter to select"
+                    ;;
+                $'\n'|$'\r')
+                    break
+                    ;;
+            esac
+        done
+    }
+
+    interact_menu
+
+    MODEL="${MODEL_OPTS[$cur]}"
+    echo
+    echo "Selected: ${MODEL_NAMES[$cur]}"
+    MODEL="$MODEL"
 
     python3 -c "
 import yaml
@@ -123,18 +201,52 @@ echo
 MODE_OPTS=("web" "cli" "tui")
 MODE_NAMES=("Web UI (browser)" "CLI (terminal)" "TUI (split panels)")
 
-echo "Select App Mode:"
-echo
-PS3="➤ "
-select choice in "${MODE_NAMES[@]}"; do
-    if [ -n "$choice" ]; then
-        MODE_IDX=$((REPLY - 1))
-        break
-    fi
-done 2>/dev/null || MODE_IDX=0
+cur=0
+draw_menu() {
+    local idx=0
+    local name
+    for name in "${MODE_NAMES[@]}"; do
+        if [ $idx -eq $cur ]; then
+            echo "  ➤ $name"
+        else
+            echo "    $name"
+        fi
+        ((idx++))
+    done
+}
 
-echo "Selected: ${MODE_NAMES[$MODE_IDX]}"
-APP="${MODE_OPTS[$MODE_IDX]}"
+interact_menu() {
+    draw_menu
+    echo
+    echo "↑↓ to move, Enter to select"
+    
+    while true; do
+        read -rsn1 key
+        case "$key" in
+            $'\x1b')
+                read -rsn1 -t 0.1 key
+                [ "$key" = "[" ] && read -rsn1 -t 0.1 key
+                case "$key" in
+                    A) cur=$((cur - 1 < 0 ? 0 : cur - 1)) ;;
+                    B) cur=$((cur + 1 >= ${#MODE_NAMES[@]} ? ${#MODE_NAMES[@]} - 1 : cur + 1)) ;;
+                esac
+                echo
+                draw_menu
+                echo
+                echo "↑↓ to move, Enter to select"
+                ;;
+            $'\n'|$'\r')
+                break
+                ;;
+        esac
+    done
+}
+
+interact_menu
+
+APP="${MODE_OPTS[$cur]}"
+echo
+echo "Selected: ${MODE_NAMES[$cur]}"
 echo
 
 if [ ! -d ".venv" ]; then

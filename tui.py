@@ -53,10 +53,13 @@ class TUI:
             if y >= h - 2:
                 break
             try:
-                self.s.addstr(y, 0, f"{role}: {txt}"[:cw-1])
+                for line in txt.split('\n'):
+                    if y >= h - 2:
+                        break
+                    self.s.addstr(y, 0, (f"{role}: " if y == 2 else "  ") + line[:cw-1])
+                    y += 1
             except:
                 pass
-            y += 1
         
         p = "CMD> " if self.cmd else " > "
         try:
@@ -155,7 +158,7 @@ def main(stdscr):
             t.msgs.append(("You", msg))
             try:
                 ctx = conv.get_conversation_summary(sid)
-                res = t.op.process(msg, {'context': ctx})
+                res = t.op.process(msg, {'context': ctx}, output_format='text')
             except Exception as e:
                 res = f"Error: {e}"
             t.msgs.append(("AI", res))

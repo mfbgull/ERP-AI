@@ -117,7 +117,7 @@ def main():
         
         try:
             context = conv.get_conversation_summary(session_id)
-            result = op.process(user_input, {'context': context})
+            result = op.process(user_input, {'context': context}, output_format='text')
             print(f"\n{result}\n")
             conv.add_message(session_id, 'assistant', result)
         except Exception as e:

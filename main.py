@@ -22,6 +22,11 @@ def select_model(models, current):
     if not models:
         return current
     
+    # Check if stdin is a TTY (interactive) or piped
+    if not sys.stdin.isatty():
+        # Non-interactive mode - just return current
+        return current
+    
     print("\nAvailable models:")
     for i, m in enumerate(models, 1):
         marker = " (current)" if m == current else ""
@@ -59,18 +64,32 @@ def main():
         print("  LLM: No providers available")
         return
     
-    model = config['ollama']['model']
-    if ollama_ok:
-        models = get_ollama_models()
-        if models:
-            model = select_model(models, model)
-            config['ollama']['model'] = model
+    # Use enabled flags from config to determine provider preference
+    ollama_enabled = config.get('ollama', {}).get('enabled', True)
+    llamacpp_enabled = config.get('llama_cpp', {}).get('enabled', False)
     
     llm = LLMHandler(config)
     op = Operation(db, llm)
     conv = ConversationEngine(db)
     
-    if ollama_ok:
+    # Respect user's config choice, fall back to availability
+    if ollama_enabled and ollama_ok:
+        model = config['ollama']['model']
+        models = get_ollama_models()
+        if models:
+            model = select_model(models, model)
+            config['ollama']['model'] = model
+        llm.set_provider('ollama')
+        print(f"\n  Using Ollama: {model}")
+    elif llamacpp_enabled and llamacpp_ok:
+        llm.set_provider('llama_cpp')
+        print("\n  Using: llama.cpp")
+    elif ollama_ok:
+        model = config['ollama']['model']
+        models = get_ollama_models()
+        if models:
+            model = select_model(models, model)
+            config['ollama']['model'] = model
         llm.set_provider('ollama')
         print(f"\n  Using Ollama: {model}")
     elif llamacpp_ok:
@@ -80,64 +99,71 @@ def main():
     session_id = conv.start_session()
     print(f"  Session: {session_id[:8]}...")
     print("\nType your request or 'quit' to exit.")
+    print("Commands: /help, /clear, /model, /switch, /quit")
     
     while True:
         try:
             user_input = input("> ").strip()
-        except EOFError:
-            break
+        except (EOFError, KeyboardInterrupt):
+            print("\nGoodbye!")
+            return
         
         if not user_input:
             continue
-        if user_input.lower() in ('quit', 'exit'):
-            break
         
-        if user_input.startswith('/'):
-            cmd = user_input[1:].lower().split()[0]
-            
-            if cmd == 'switch':
-                new_provider = 'llama_cpp' if llm.current_provider == 'ollama' else 'ollama'
-                msg = llm.switch_provider(new_provider)
-                print(f"[AI] {msg}")
-            elif cmd == 'model':
-                models = get_ollama_models()
-                if models:
-                    print(f"\nAvailable: {', '.join(models)}")
-                    print(f"Current: {config['ollama']['model']}")
-            elif cmd == 'customers' or cmd == 'items':
-                results = db.execute(f"SELECT * FROM {cmd} LIMIT 10")
-                print(format_results(results))
-            elif cmd == 'help':
-                print("Commands: /customers, /items, /model, /switch, /quit")
-            else:
-                print(f"Unknown: {cmd}")
+        if user_input.lower() in ('quit', 'exit', '/quit', '/exit'):
+            print("Goodbye!")
+            return
+        
+        if user_input == '/help':
+            print("\nCommands:")
+            print("  /help     - Show this help")
+            print("  /clear    - Clear chat history")
+            print("  /model    - Show current model")
+            print("  /switch   - Switch LLM provider")
+            print("  /quit     - Exit")
             continue
         
-        conv.add_message(session_id, 'user', user_input)
+        if user_input == '/clear':
+            conv.sessions = {}
+            session_id = conv.start_session()
+            llm.clear_history()
+            print("Chat history cleared.")
+            continue
+        
+        if user_input == '/model':
+            if llm.current_provider == 'ollama':
+                models = get_ollama_models()
+                current = config['ollama']['model']
+                print(f"\nProvider: Ollama")
+                print(f"Current: {current}")
+                print(f"Available: {', '.join(models)}")
+            else:
+                print(f"\nProvider: llama.cpp")
+            continue
+        
+        if user_input == '/switch':
+            if ollama_ok and llamacpp_ok:
+                new = 'llama_cpp' if llm.current_provider == 'ollama' else 'ollama'
+                msg = llm.switch_provider(new)
+                print(msg)
+            else:
+                print("Only one provider available.")
+            continue
+        
+        # Process user message
+        context = conv.get_context(session_id)
+        conv.add_message(session_id, "user", user_input)
         
         try:
-            context = conv.get_conversation_summary(session_id)
-            result = op.process(user_input, {'context': context}, output_format='text')
+            result = op.process(user_input, {
+                "context": conv.get_conversation_summary(session_id),
+                "current_customer": context.get('current_customer_name'),
+            })
             print(f"\n{result}\n")
-            conv.add_message(session_id, 'assistant', result)
+            conv.add_message(session_id, "assistant", result)
         except Exception as e:
-            print(f"Error: {e}")
-    
-    print("\nGoodbye!")
-
-
-def format_results(rows):
-    if not rows:
-        return "No results."
-    if len(rows) == 1:
-        return "\n".join(f"{k}: {v}" for k, v in rows[0].items())
-    
-    headers = list(rows[0].keys())
-    header_line = " | ".join(headers)
-    lines = [header_line, "-" * len(header_line)]
-    for row in rows:
-        lines.append(" | ".join(str(row.get(h, '')) for h in headers))
-    return "\n".join(lines)
+            print(f"\nError: {e}\n")
 
 
 if __name__ == "__main__":

@@ -141,7 +141,19 @@ def main(stdscr):
     op = Operation(db, llm)
     conv = ConversationEngine(db)
     
-    llm.set_provider('ollama' if oll else 'llama_cpp')
+    # Read enabled flags from config to determine provider preference
+    ollama_enabled = cfg.get('ollama', {}).get('enabled', True)
+    llamacpp_enabled = cfg.get('llama_cpp', {}).get('enabled', False)
+    
+    # Respect user's config choice, fall back to availability
+    if ollama_enabled and oll:
+        llm.set_provider('ollama')
+    elif llamacpp_enabled and llc:
+        llm.set_provider('llama_cpp')
+    elif oll:
+        llm.set_provider('ollama')
+    elif llc:
+        llm.set_provider('llama_cpp')
     sid = conv.start_session()
     
     t = TUI(stdscr, cfg, db, llm, op, conv, sid)

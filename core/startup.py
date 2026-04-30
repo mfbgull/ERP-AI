@@ -26,21 +26,37 @@ def init_database(config: dict) -> Database:
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     db = Database(db_path)
     
-    schema_path = Path(__file__).parent.parent / 'database' / 'schema.sql'
-    if schema_path.exists():
-        with open(schema_path) as f:
-            schema_sql = f.read()
-        conn = db.get_connection()
-        conn.executescript(schema_sql)
-        conn.close()
+    # Only run schema if database is empty/new
+    conn = db.get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+    has_users = cursor.fetchone() is not None
+    conn.close()
     
-    seed_path = Path(__file__).parent.parent / 'database' / 'seed.sql'
-    if seed_path.exists():
-        with open(seed_path) as f:
-            seed_sql = f.read()
-        conn = db.get_connection()
-        conn.executescript(seed_sql)
-        conn.close()
+    if not has_users:
+        schema_path = Path(__file__).parent.parent / 'database' / 'schema.sql'
+        if schema_path.exists():
+            try:
+                with open(schema_path) as f:
+                    schema_sql = f.read()
+                conn = db.get_connection()
+                conn.executescript(schema_sql)
+                conn.close()
+                print("    Schema initialized")
+            except Exception as e:
+                print(f"    Schema init skipped: {e}")
+        
+        seed_path = Path(__file__).parent.parent / 'database' / 'seed.sql'
+        if seed_path.exists():
+            try:
+                with open(seed_path) as f:
+                    seed_sql = f.read()
+                conn = db.get_connection()
+                conn.executescript(seed_sql)
+                conn.close()
+                print("    Seed data loaded")
+            except Exception as e:
+                print(f"    Seed skipped: {e}")
     
     return db
 

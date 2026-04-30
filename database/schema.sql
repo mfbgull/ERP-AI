@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS warehouses (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     warehouse_code TEXT NOT NULL UNIQUE,
     warehouse_name TEXT NOT NULL,
-    address TEXT,
+    location TEXT,
     is_active INTEGER DEFAULT 1,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );

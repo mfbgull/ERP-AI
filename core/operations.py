@@ -1,5 +1,7 @@
 import json
+import re
 from datetime import datetime, timedelta
+from typing import Optional, Dict, Any, List
 from .database import Database
 from .llm_handler import LLMHandler
 
@@ -10,55 +12,160 @@ class Operation:
         self.llm = llm
     
     def process(self, user_message: str, context: dict = None, output_format: str = 'text') -> str:
+        """Process user message with enhanced security and validation."""
         prompt = self._build_prompt(user_message, context)
-        response = self.llm.chat(prompt, self._system_prompt())
-        return self._handle_response(response, output_format)
+        
+        try:
+            response = self.llm.chat(prompt, self._system_prompt())
+            return self._handle_response(response, output_format)
+        except RuntimeError as e:
+            return f"Error: LLM connection failed - {e}"
+    
+    def process_stream(self, user_message: str, context: dict = None):
+        """Process with streaming support."""
+        prompt = self._build_prompt(user_message, context)
+        
+        try:
+            for chunk in self.llm.chat_stream(prompt, self._system_prompt()):
+                yield chunk
+        except RuntimeError as e:
+            yield f"Error: {e}"
     
     def _system_prompt(self) -> str:
-        return """You are an ERP AI assistant. 
+        return """You are an ERP AI assistant for a manufacturing company.
 
 When user asks to view data, write a SQL query.
 Output format: SQL: <your query>
 
+IMPORTANT SECURITY RULES:
+- NEVER use DROP, DELETE, ALTER, TRUNCATE, or UPDATE without explicit confirmation
+- Only use SELECT for read operations
+- For INSERT/UPDATE/DELETE, explain what you'll do first and wait for confirmation
+- Sanitize all inputs to prevent SQL injection
+- Validate numeric inputs are actually numbers
+- Check foreign key constraints before operations
+
+ERP Context:
+- Items can be raw materials, finished goods, or packaging
+- BOM (Bill of Materials) defines production recipes
+- Work orders consume materials per BOM
+- Inventory movements track stock changes
+- Always check stock availability before production
+
 That's it. No other text needed."""
     
     def _build_prompt(self, message: str, context):
+        """Build prompt with context and sanitization."""
+        message = self._sanitize_input(message)
+        
         prompt = message
         if context:
             if context.get('current_customer'):
                 prompt = f"Current customer: {context['current_customer']}\n\n{prompt}"
+            if context.get('context'):
+                prompt = f"{context['context']}\n\n{prompt}"
         return prompt
     
+    def _sanitize_input(self, text: str) -> str:
+        """Basic input sanitization."""
+        if not isinstance(text, str):
+            return ""
+        dangerous = [';', '--', '/*', '*/', '@@', 'char(', 'nchar(', 
+                     'varchar(', 'nvarchar(', 'alter ', 'create ', 'drop ',
+                     'exec ', 'execute ', 'insert ', 'delete ', 'update ',
+                     'union ', 'waitfor ', 'xp_']
+        for d in dangerous:
+            text = text.replace(d, f'[{d.strip()}]')
+        return text
+    
     def _handle_response(self, response: str, output_format: str = 'text') -> str:
-        import re
-        sql = None
+        """Handle LLM response with enhanced SQL parsing and validation."""
+        if self._requires_confirmation(response):
+            return response + "\n\n[CONFIRMATION REQUIRED] Please confirm with 'YES' to proceed."
         
-        sql_match = re.search(r'```sql\s*(.*?)\s*```', response, re.DOTALL | re.IGNORECASE)
-        if sql_match:
-            sql = sql_match.group(1).strip()
-        else:
-            for line in response.strip().split('\n'):
-                line = line.strip()
-                if line.startswith('SQL:'):
-                    sql = line[4:].strip()
-                    break
-                if line.startswith('```'):
-                    continue
+        sql = self._extract_sql(response)
         
         if not sql:
             return response
         
+        sql_type = self._get_sql_type(sql)
+        
+        if sql_type == 'SELECT':
+            return self._execute_select(sql, output_format)
+        elif sql_type in ('INSERT', 'UPDATE', 'DELETE'):
+            return self._execute_write_with_validation(sql, sql_type)
+        else:
+            return f"Unsupported SQL type: {sql_type}\n\nResponse: {response}"
+    
+    def _requires_confirmation(self, response: str) -> bool:
+        """Check if operation requires explicit confirmation."""
+        write_keywords = ['INSERT INTO', 'UPDATE ', 'DELETE FROM', 
+                         'DROP ', 'ALTER ', 'TRUNCATE ']
+        return any(kw in response.upper() for kw in write_keywords)
+    
+    def _extract_sql(self, response: str) -> Optional[str]:
+        """Extract SQL query from response."""
+        sql_match = re.search(r'```sql\s*(.*?)\s*```', response, re.DOTALL | re.IGNORECASE)
+        if sql_match:
+            return sql_match.group(1).strip()
+        
+        for line in response.strip().split('\n'):
+            line = line.strip()
+            if line.upper().startswith('SQL:'):
+                return line[4:].strip()
+        
+        if response.strip().upper().startswith('SELECT'):
+            return response.strip()
+        
+        return None
+    
+    def _get_sql_type(self, sql: str) -> str:
+        """Determine SQL query type."""
+        sql_upper = sql.strip().upper()
+        if sql_upper.startswith('SELECT'):
+            return 'SELECT'
+        elif sql_upper.startswith('INSERT'):
+            return 'INSERT'
+        elif sql_upper.startswith('UPDATE'):
+            return 'UPDATE'
+        elif sql_upper.startswith('DELETE'):
+            return 'DELETE'
+        else:
+            return 'OTHER'
+    
+    def _execute_select(self, sql: str, output_format: str) -> str:
+        """Execute SELECT query safely."""
         try:
-            if sql.strip().upper().startswith('SELECT'):
-                results = self.db.execute(sql)
-                return self._format_results(results, output_format)
-            else:
-                rowid = self.db.execute_write(sql)
-                return f"Operation completed. Rows affected: {rowid}"
+            if not sql.strip().upper().startswith('SELECT'):
+                return f"Error: Only SELECT queries allowed for read operations.\nQuery: {sql}"
+            
+            results = self.db.execute(sql)
+            return self._format_results(results, output_format)
         except Exception as e:
-            return f"Error: {e}\n\nResponse: {response}"
+            return f"Query Error: {e}\n\nSQL: {sql}"
+    
+    def _execute_write_with_validation(self, sql: str, sql_type: str) -> str:
+        """Execute write operation with validation."""
+        try:
+            if 'DROP' in sql.upper() or 'ALTER' in sql.upper() or 'TRUNCATE' in sql.upper():
+                return f"Error: Dangerous operation '{sql_type}' not allowed.\n\nSQL: {sql}"
+            
+            if sql_type in ('UPDATE', 'DELETE'):
+                sql_upper = sql.upper()
+                if 'WHERE' not in sql_upper and 'LIMIT' not in sql_upper:
+                    return f"Warning: {sql_type} without WHERE clause detected.\nThis could affect all rows.\n\nSQL: {sql}\n\nPlease add a WHERE clause to limit the affected rows."
+            
+            rowid = self.db.execute_write(sql)
+            
+            if sql_type == 'INSERT':
+                return f"✓ Insert successful. New row ID: {rowid}"
+            else:
+                return f"✓ {sql_type} successful. Rows affected: {rowid if rowid else 'N/A'}"
+        except Exception as e:
+            return f"{sql_type} Error: {e}\n\nSQL: {sql}"
     
     def _format_results(self, rows: list, format: str = 'text') -> str:
+        """Format query results."""
         if not rows:
             return "No results found."
         
@@ -81,15 +188,15 @@ That's it. No other text needed."""
                 html += '</tr>'
             
             html += '</tbody></table>'
-            return html + f' ({len(rows)} rows)'
+            return html + f' <span class="row-count">({len(rows)} rows)</span>'
         
-        col_widths = {h: len(h) for h in headers}
+        col_widths = {h: len(str(h)) for h in headers}
         for row in rows:
             for h in headers:
                 col_widths[h] = max(col_widths[h], len(str(row.get(h, ''))))
         
         lines = []
-        header_line = ' | '.join(h.ljust(col_widths[h]) for h in headers)
+        header_line = ' | '.join(str(h).ljust(col_widths[h]) for h in headers)
         lines.append(header_line)
         lines.append('-' * len(header_line))
         
@@ -97,7 +204,7 @@ That's it. No other text needed."""
             line = ' | '.join(str(row.get(h, '')).ljust(col_widths[h]) for h in headers)
             lines.append(line)
         
-        lines.append(f"({len(rows)} rows)")
+        lines.append(f"\n({len(rows)} rows)")
         return '\n'.join(lines)
     
     def create_invoice_draft(self, customer_id: int, customer_name: str, warehouse_id: int = 1) -> dict:

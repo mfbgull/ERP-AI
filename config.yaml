@@ -1,5 +1,5 @@
 database:
-  path: ./data/erp.db
+  path: /home/fawad/ai/minierp/database/erp.db
   type: sqlite
 invoice:
   default_tax_rate: 0.17
@@ -12,7 +12,7 @@ llama_cpp:
 ollama:
   enabled: true
   host: localhost
-  model: gemma3:270m
+  model: gemma3:1b
   port: 11434
   timeout: 120
 system:

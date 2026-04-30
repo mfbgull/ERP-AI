@@ -1,4 +1,4 @@
-INSERT OR IGNORE INTO warehouses (warehouse_code, warehouse_name, address) 
+INSERT OR IGNORE INTO warehouses (warehouse_code, warehouse_name, location) 
 VALUES ('WH01', 'Main Warehouse', '123 Industrial Ave');
 
 INSERT OR IGNORE INTO users (username, email, full_name, role) 

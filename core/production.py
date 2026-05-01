@@ -158,13 +158,25 @@ class ProductionManager:
         
         # Create work order
         wo_date = datetime.now().strftime('%Y-%m-%d')
+        # Generate work order number
+        last_wo = self.db.execute(
+            "SELECT wo_no FROM work_orders WHERE wo_no LIKE ? ORDER BY id DESC LIMIT 1",
+            (f"WO-{wo_date.replace('-', '')}-%",)
+        )
+        if last_wo:
+            last_no = int(last_wo[0]['wo_no'].split('-')[-1])
+        else:
+            last_no = 0
+        next_num = last_no + 1
+        wo_no = f"WO-{wo_date.replace('-', '')}-{next_num:04d}"
+        
         query = """
         INSERT INTO work_orders 
-        (bom_id, quantity, warehouse_id, status, notes, created_at)
-        VALUES (?, ?, ?, 'pending', ?, ?)
+        (wo_no, bom_id, finished_item_id, planned_quantity, warehouse_id, status, notes, created_at, created_by)
+        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, 1)
         """
         wo_id = self.db.execute_write(query, (
-            bom_id, quantity, warehouse_id, notes, wo_date
+            wo_no, bom_id, bom_data['bom']['finished_item_id'], quantity, warehouse_id, notes, wo_date
         ))
         
         # Create material consumption entries
@@ -176,9 +188,9 @@ class ProductionManager:
             
             self.db.execute_write("""
             INSERT INTO material_consumption
-            (work_order_id, item_id, quantity, warehouse_id, status)
-            VALUES (?, ?, ?, ?, 'pending')
-            """, (wo_id, comp['item_id'], float(total_required), warehouse_id))
+            (wo_id, item_id, consumed_quantity, consumption_date, created_by)
+            VALUES (?, ?, ?, ?, 1)
+            """, (wo_id, comp['item_id'], float(total_required), wo_date))
         
         return {
             'work_order_id': wo_id,
@@ -206,11 +218,11 @@ class ProductionManager:
         
         bom_data = self.get_bom(bom_id=wo['bom_id'])
         bom_qty = Decimal(str(bom_data['bom']['quantity'] or 1))
-        total_output = Decimal(str(wo['quantity']))
+        total_output = Decimal(str(wo['planned_quantity']))
         
         # Consume materials
         materials = self.db.execute(
-            "SELECT * FROM material_consumption WHERE work_order_id = ?",
+            "SELECT * FROM material_consumption WHERE wo_id = ?",
             (wo_id,)
         )
         
@@ -219,7 +231,7 @@ class ProductionManager:
             UPDATE stock_balances
             SET quantity = quantity - ?
             WHERE item_id = ? AND warehouse_id = ?
-            """, (mat['quantity'], mat['item_id'], wo['warehouse_id']))
+            """, (mat['consumed_quantity'], mat['item_id'], wo['warehouse_id']))
             
             # Update item stock
             self.db.execute_write("""
@@ -227,10 +239,6 @@ class ProductionManager:
                 SELECT COALESCE(SUM(quantity), 0) FROM stock_balances WHERE item_id = ?
             ) WHERE id = ?
             """, (mat['item_id'], mat['item_id']))
-            
-            self.db.execute_write("""
-            UPDATE material_consumption SET status = 'consumed' WHERE id = ?
-            """, (mat['id'],))
         
         # Add finished goods to inventory
         self.db.execute_write("""
@@ -248,7 +256,7 @@ class ProductionManager:
         
         # Update work order status
         self.db.execute_write("""
-        UPDATE work_orders SET status = 'completed', completed_at = ? WHERE id = ?
+        UPDATE work_orders SET status = 'completed', actual_completion_date = ? WHERE id = ?
         """, (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), wo_id))
         
         return {

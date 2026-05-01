@@ -123,6 +123,18 @@ CREATE TABLE IF NOT EXISTS invoice_items (
     FOREIGN KEY (item_id) REFERENCES items(id)
 );
 
+CREATE TABLE IF NOT EXISTS payments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    invoice_id INTEGER NOT NULL,
+    amount REAL NOT NULL,
+    payment_date TEXT NOT NULL,
+    payment_method TEXT,
+    reference TEXT,
+    notes TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+);
+
 CREATE TABLE IF NOT EXISTS settings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     setting_key TEXT NOT NULL UNIQUE,

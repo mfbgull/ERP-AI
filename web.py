@@ -643,12 +643,262 @@ def api_create_work_order():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/api/production/work-order/<int:wo_id>/complete", methods=["POST"])
-def api_complete_work_order(wo_id):
-    """Complete a work order."""
+@app.route("/api/items/low-stock", methods=["GET"])
+def api_low_stock():
+    """Get low stock items."""
     try:
-        result = production.complete_work_order(wo_id)
+        threshold = request.args.get("threshold", type=int)
+        items = operations.get_low_stock_items(threshold)
+        return jsonify(items or [])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/stock/movements", methods=["GET"])
+def api_stock_movements():
+    """Get stock movements."""
+    try:
+        item_id = request.args.get("item_id", type=int)
+        days = request.args.get("days", 30, type=int)
+        movements = operations.get_stock_movements(item_id, days)
+        return jsonify(movements or [])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/stock/adjustment", methods=["POST"])
+def api_stock_adjustment():
+    """Create stock adjustment."""
+    try:
+        data = request.get_json(silent=True) or {}
+        item_id = data.get("item_id")
+        warehouse_id = data.get("warehouse_id", 1)
+        quantity = data.get("quantity")
+        reason = data.get("reason", "Adjustment")
+        
+        if not item_id or quantity is None:
+            return jsonify({"error": "item_id and quantity required"}), 400
+        
+        result = operations.create_stock_adjustment(
+            item_id=item_id,
+            warehouse_id=warehouse_id,
+            quantity=quantity,
+            reason=reason
+        )
         return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/invoices", methods=["POST"])
+def api_create_invoice():
+    """Create invoice from draft."""
+    try:
+        data = request.get_json(silent=True) or {}
+        draft_id = data.get("draft_id")
+        
+        if not draft_id:
+            return jsonify({"error": "draft_id required"}), 400
+        
+        result = operations.finalize_invoice(draft_id)
+        return jsonify(result)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/reports/profit-margin", methods=["GET"])
+def api_profit_margin():
+    """Get profit margin analysis."""
+    try:
+        rows = db.execute("""
+            SELECT 
+                i.id,
+                i.item_code,
+                i.item_name,
+                i.category,
+                i.standard_cost as cost_price,
+                i.standard_selling_price,
+                (i.standard_selling_price - i.standard_cost) as margin,
+                CASE 
+                    WHEN i.standard_cost > 0 
+                    THEN ROUND(((i.standard_selling_price - i.standard_cost) / i.standard_cost * 100), 2)
+                    ELSE 0 
+                END as margin_percent,
+                i.current_stock,
+                (i.current_stock * i.standard_selling_price) as stock_value
+            FROM items i
+            WHERE i.is_active = 1
+            ORDER BY margin_percent DESC
+        """)
+        return jsonify(rows or [])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/reports/purchase-orders", methods=["GET"])
+def api_purchase_orders():
+    """Get purchase orders."""
+    try:
+        rows = db.execute("""
+            SELECT po.*, s.supplier_name
+            FROM purchase_orders po
+            LEFT JOIN suppliers s ON po.supplier_id = s.id
+            ORDER BY po.created_at DESC
+        """)
+        return jsonify(rows or [])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/invoice/<int:invoice_id>/payments", methods=["GET"])
+def api_invoice_payments(invoice_id):
+    """Get payment history for an invoice."""
+    try:
+        payments = db.execute("""
+            SELECT * FROM payments 
+            WHERE invoice_id = ?
+            ORDER BY payment_date DESC
+        """, (invoice_id,))
+        return jsonify(payments or [])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/invoice/<int:invoice_id>/payments", methods=["POST"])
+def api_record_payment(invoice_id):
+    """Record a payment against an invoice."""
+    try:
+        data = request.get_json(silent=True) or {}
+        amount = data.get("amount")
+        payment_method = data.get("payment_method", "cash")
+        reference = data.get("reference", "")
+        notes = data.get("notes", "")
+        
+        if not amount:
+            return jsonify({"error": "amount required"}), 400
+        
+        result = operations.record_payment(
+            invoice_id=invoice_id,
+            amount=float(amount),
+            payment_method=payment_method,
+            reference=reference,
+            notes=notes
+        )
+        return jsonify(result)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/invoice/<int:invoice_id>/status", methods=["GET"])
+def api_invoice_status(invoice_id):
+    """Get detailed invoice status."""
+    try:
+        result = operations.get_invoice_status(invoice_id)
+        return jsonify(result)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/reports/aging", methods=["GET"])
+def api_aging_report():
+    """Get accounts receivable aging report."""
+    try:
+        result = operations.get_aging_report()
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/reports/sales-summary", methods=["GET"])
+def api_sales_summary():
+    """Get sales summary report."""
+    try:
+        period = request.args.get("period", "monthly")
+        
+        if period == "monthly":
+            rows = db.execute("""
+                SELECT 
+                    strftime('%Y-%m', invoice_date) as month,
+                    COUNT(*) as invoice_count,
+                    SUM(total_amount) as total_sales,
+                    SUM(CASE WHEN status = 'paid' THEN total_amount ELSE 0 END) as paid,
+                    SUM(CASE WHEN status != 'paid' THEN total_amount ELSE 0 END) as outstanding
+                FROM invoices
+                WHERE status != 'draft'
+                GROUP BY strftime('%Y-%m', invoice_date)
+                ORDER BY month DESC
+                LIMIT 12
+            """)
+        else:
+            rows = db.execute("""
+                SELECT 
+                    strftime('%Y-%m-%d', invoice_date) as day,
+                    COUNT(*) as invoice_count,
+                    SUM(total_amount) as total_sales,
+                    SUM(CASE WHEN status = 'paid' THEN total_amount ELSE 0 END) as paid,
+                    SUM(CASE WHEN status != 'paid' THEN total_amount ELSE 0 END) as outstanding
+                FROM invoices
+                WHERE status != 'draft'
+                GROUP BY strftime('%Y-%m-%d', invoice_date)
+                ORDER BY day DESC
+                LIMIT 30
+            """)
+        
+        return jsonify(rows or [])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/reports/top-items", methods=["GET"])
+def api_top_items():
+    """Get top selling items report."""
+    try:
+        rows = db.execute("""
+            SELECT 
+                i.item_code,
+                i.item_name,
+                i.category,
+                SUM(ii.quantity) as total_sold,
+                SUM(ii.amount) as total_revenue,
+                AVG(ii.unit_price) as avg_price
+            FROM invoice_items ii
+            JOIN invoices inv ON ii.invoice_id = inv.id
+            JOIN items i ON ii.item_id = i.id
+            WHERE inv.status = 'finalized'
+            GROUP BY i.id, i.item_code, i.item_name, i.category
+            ORDER BY total_revenue DESC
+            LIMIT 10
+        """)
+        return jsonify(rows or [])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/reports/customer-summary", methods=["GET"])
+def api_customer_summary():
+    """Get customer summary report."""
+    try:
+        rows = db.execute("""
+            SELECT 
+                c.id,
+                c.customer_code,
+                c.customer_name,
+                COUNT(DISTINCT inv.id) as total_invoices,
+                SUM(inv.total_amount) as total_spent,
+                SUM(CASE WHEN inv.status = 'paid' THEN inv.total_amount ELSE 0 END) as total_paid,
+                SUM(CASE WHEN inv.status != 'paid' THEN inv.total_amount ELSE 0 END) as outstanding
+            FROM customers c
+            LEFT JOIN invoices inv ON c.id = inv.customer_id AND inv.status != 'draft'
+            GROUP BY c.id, c.customer_code, c.customer_name
+            ORDER BY total_spent DESC
+        """)
+        return jsonify(rows or [])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

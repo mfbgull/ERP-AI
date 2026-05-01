@@ -1,5 +1,6 @@
 import json
 import re
+import time
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 from .database import Database
@@ -213,12 +214,13 @@ That's it. No other text needed."""
         
         query = """
         INSERT INTO invoice_drafts 
-        (customer_id, customer_name, invoice_date, due_date, warehouse_id, status)
-        VALUES (?, ?, ?, ?, ?, 'draft')
+        (session_id, customer_id, invoice_date, due_date, status, items_data)
+        VALUES (?, ?, ?, ?, 'draft', '{}')
         """
         
         draft_id = self.db.execute_write(query, (
-            customer_id, customer_name, invoice_date, due_date, warehouse_id
+            f"session_{datetime.now().strftime('%Y%m%d%H%M%S')}",
+            customer_id, invoice_date, due_date
         ))
         
         return {
@@ -250,14 +252,16 @@ That's it. No other text needed."""
         if 'items' not in items_data:
             items_data = {'items': [], 'subtotal': 0, 'tax_rate': 0.17, 'tax_amount': 0, 'total': 0}
         
-        amount = item['unit_price'] * quantity
+        unit_price = item['standard_selling_price']
+        amount = unit_price * quantity
         items_data['items'].append({
             'item_id': item_id,
             'item_code': item['item_code'],
             'item_name': item['item_name'],
             'quantity': quantity,
-            'unit_price': item['unit_price'],
-            'amount': amount
+            'unit_price': float(unit_price),
+            'amount': float(amount),
+            'is_raw_material': bool(item['is_raw_material'])
         })
         
         subtotal = sum(i['amount'] for i in items_data['items'])
@@ -269,8 +273,8 @@ That's it. No other text needed."""
         items_data['tax_amount'] = tax_amount
         items_data['total'] = total
         
-        query = "UPDATE invoice_drafts SET items_data = ?, subtotal = ?, tax_amount = ?, total = ? WHERE id = ?"
-        self.db.execute_write(query, (json.dumps(items_data), subtotal, tax_amount, total, draft_id))
+        query = "UPDATE invoice_drafts SET items_data = ? WHERE id = ?"
+        self.db.execute_write(query, (json.dumps(items_data), draft_id))
         
         return items_data
     
@@ -283,47 +287,158 @@ That's it. No other text needed."""
             raise ValueError("Draft has no items")
         
         today = datetime.now().strftime('%Y%m%d')
+        # Get last invoice number for today
         last_inv = self.db.execute(
-            "SELECT MAX(CAST(RIGHT(invoice_no, 4) AS INTEGER)) as last_no FROM invoices WHERE invoice_no LIKE ?",
+            "SELECT invoice_no FROM invoices WHERE invoice_no LIKE ? ORDER BY id DESC LIMIT 1",
             (f"INV-{today}-%",)
         )
-        next_num = (last_inv[0]['last_no'] or 0) + 1
+        if last_inv:
+            last_no = int(last_inv[0]['invoice_no'].split('-')[-1])
+        else:
+            last_no = 0
+        next_num = last_no + 1
         invoice_no = f"INV-{today}-{next_num:04d}"
+        
+        due_date = draft['due_date']
         
         query = """
         INSERT INTO invoices 
-        (invoice_no, customer_id, customer_name, invoice_date, due_date, status,
-         subtotal, tax_rate, tax_amount, total_amount, created_by)
-        VALUES (?, ?, ?, ?, ?, 'finalized', ?, ?, ?, ?, ?, ?)
+        (invoice_no, customer_id, invoice_date, due_date, status,
+         total_amount, paid_amount, balance_amount, created_by)
+        VALUES (?, ?, ?, ?, 'pending', ?, 0, ?, ?)
         """
         invoice_id = self.db.execute_write(query, (
-            invoice_no, draft['customer_id'], draft['customer_name'],
-            draft['invoice_date'], draft['due_date'],
-            items_data['subtotal'], items_data['tax_rate'],
-            items_data['tax_amount'], items_data['total'], user_id
+            invoice_no, draft['customer_id'],
+            draft['invoice_date'], due_date,
+            items_data['total'], items_data['total'], user_id
         ))
         
         for item in items_data['items']:
             query = """
             INSERT INTO invoice_items 
-            (invoice_id, item_id, item_code, item_name, quantity, unit_price, amount, tax_rate)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (invoice_id, item_id, quantity, unit_price, amount, tax_rate)
+            VALUES (?, ?, ?, ?, ?, ?)
             """
             self.db.execute_write(query, (
-                invoice_id, item['item_id'], item['item_code'], item['item_name'],
-                item['quantity'], item['unit_price'], item['amount'], items_data['tax_rate']
+                invoice_id, item['item_id'], item['quantity'],
+                item['unit_price'], item['amount'], items_data.get('tax_rate', 0.17)
             ))
             
-            self._deduct_stock(item['item_id'], item['quantity'], draft['warehouse_id'])
+            # Only deduct stock if item is a raw material
+            if item.get('is_raw_material'):
+                self._deduct_stock(item['item_id'], item['quantity'], 1)
         
         self.db.execute_write("UPDATE invoice_drafts SET status = 'finalized' WHERE id = ?", (draft_id,))
         
         return {
             'invoice_no': invoice_no,
             'invoice_id': invoice_id,
-            'total': items_data['total']
+            'total': items_data['total'],
+            'due_date': due_date
         }
     
+    def get_low_stock_items(self, threshold: int = None) -> list:
+        """Get items below reorder level.
+        
+        Args:
+            threshold: Optional custom threshold, uses item's reorder_level if None
+        
+        Returns:
+            List of low stock items
+        """
+        if threshold is not None:
+            query = """
+                SELECT i.*, sb.quantity as current_stock
+                FROM items i
+                LEFT JOIN stock_balances sb ON i.id = sb.item_id
+                WHERE i.is_active = 1 AND sb.quantity < ?
+                ORDER BY sb.quantity ASC
+            """
+            return self.db.execute(query, (threshold,))
+        else:
+            query = """
+                SELECT i.*, sb.quantity as current_stock
+                FROM items i
+                LEFT JOIN stock_balances sb ON i.id = sb.item_id
+                WHERE i.is_active = 1 AND sb.quantity < i.reorder_level
+                ORDER BY sb.quantity ASC
+            """
+            return self.db.execute(query)
+
+    def get_stock_movements(self, item_id: int = None, days: int = 30) -> list:
+        """Get recent stock movements.
+        
+        Args:
+            item_id: Optional item ID to filter
+            days: Number of days to look back
+        
+        Returns:
+            List of stock movements
+        """
+        if item_id:
+            query = """
+                SELECT sm.*, i.item_name, w.warehouse_name
+                FROM stock_movements sm
+                JOIN items i ON sm.item_id = i.id
+                JOIN warehouses w ON sm.warehouse_id = w.id
+                WHERE sm.item_id = ?
+                AND sm.created_at >= datetime('now', '-' || ? || ' days')
+                ORDER BY sm.created_at DESC
+            """
+            return self.db.execute(query, (item_id, days))
+        else:
+            query = """
+                SELECT sm.*, i.item_name, w.warehouse_name
+                FROM stock_movements sm
+                JOIN items i ON sm.item_id = i.id
+                JOIN warehouses w ON sm.warehouse_id = w.id
+                WHERE sm.created_at >= datetime('now', '-' || ? || ' days')
+                ORDER BY sm.created_at DESC
+            """
+            return self.db.execute(query, (days,))
+
+    def create_stock_adjustment(self, item_id: int, warehouse_id: int, 
+                                quantity: int, reason: str = "Adjustment") -> dict:
+        """Create a manual stock adjustment.
+        
+        Args:
+            item_id: Item ID
+            warehouse_id: Warehouse ID
+            quantity: Adjustment quantity (positive for addition, negative for reduction)
+            reason: Reason for adjustment
+        
+        Returns:
+            Adjustment record
+        """
+        # Record movement
+        movement_id = self.db.execute_write("""
+            INSERT INTO stock_movements 
+            (item_id, warehouse_id, movement_type, quantity, notes, created_by)
+            VALUES (?, ?, 'adjustment', ?, ?, 1)
+        """, (item_id, warehouse_id, quantity, reason))
+        
+        # Update stock balance
+        self.db.execute_write("""
+            UPDATE stock_balances 
+            SET quantity = quantity + ?
+            WHERE item_id = ? AND warehouse_id = ?
+        """, (quantity, item_id, warehouse_id))
+        
+        # Update item stock
+        self.db.execute_write("""
+            UPDATE items SET current_stock = (
+                SELECT SUM(quantity) FROM stock_balances WHERE item_id = ?
+            ) WHERE id = ?
+        """, (item_id, item_id))
+        
+        return {
+            'movement_id': movement_id,
+            'item_id': item_id,
+            'warehouse_id': warehouse_id,
+            'quantity': quantity,
+            'reason': reason
+        }
+
     def _deduct_stock(self, item_id: int, quantity: int, warehouse_id: int):
         self.db.execute_write("""
         UPDATE stock_balances 
@@ -336,3 +451,196 @@ That's it. No other text needed."""
             SELECT SUM(quantity) FROM stock_balances WHERE item_id = ?
         ) WHERE id = ?
         """, (item_id, item_id))
+
+    def record_payment(self, invoice_id: int, amount: float, payment_method: str = 'cash',
+                      reference: str = None, notes: str = None) -> dict:
+        """Record a payment against an invoice.
+        
+        Args:
+            invoice_id: Invoice ID
+            amount: Payment amount
+            payment_method: cash, bank_transfer, credit_card, etc.
+            reference: Payment reference/transaction ID
+            notes: Additional notes
+        
+        Returns:
+            Payment record
+        """
+        # Get invoice details
+        invoice = self.db.execute(
+            "SELECT * FROM invoices WHERE id = ?", (invoice_id,)
+        )
+        if not invoice:
+            raise ValueError(f"Invoice {invoice_id} not found")
+        
+        invoice = invoice[0]
+        
+        # Calculate current outstanding
+        current_paid = self.db.execute("""
+            SELECT COALESCE(SUM(amount), 0) as total_paid
+            FROM payments
+            WHERE invoice_id = ?
+        """, (invoice_id,))[0]['total_paid']
+        
+        outstanding = invoice['total_amount'] - current_paid
+        
+        if amount > outstanding:
+            raise ValueError(f"Payment amount ({amount}) exceeds outstanding balance ({outstanding})")
+        
+        # Record payment
+        payment_date = datetime.now().strftime('%Y-%m-%d')
+        # Generate payment number
+        payment_no = f"PAY-{payment_date.replace('-', '')}-{int(time.time())}"
+        payment_id = self.db.execute_write("""
+            INSERT INTO payments 
+            (payment_no, invoice_id, customer_id, payment_date, amount, payment_method, reference_no, notes, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+        """, (payment_no, invoice_id, invoice['customer_id'], payment_date, amount, payment_method, reference or '', notes or ''))
+        
+        # Update invoice status
+        new_paid = current_paid + amount
+        if new_paid >= invoice['total_amount']:
+            status = 'Paid'
+        elif new_paid > 0:
+            status = 'Partial'
+        else:
+            status = 'Unpaid'
+        
+        self.db.execute_write("""
+            UPDATE invoices SET status = ?, paid_amount = ?, balance_amount = ? WHERE id = ?
+        """, (status, new_paid, invoice['total_amount'] - new_paid, invoice_id))
+        
+        return {
+            'payment_id': payment_id,
+            'invoice_id': invoice_id,
+            'invoice_no': invoice['invoice_no'],
+            'amount': amount,
+            'payment_date': payment_date,
+            'payment_method': payment_method,
+            'outstanding': outstanding - amount,
+            'status': status
+        }
+
+    def get_aging_report(self) -> dict:
+        """Generate accounts receivable aging report.
+        
+        Returns:
+            Aging report with buckets: current, 1_30, 31_60, 61_90, 90_plus
+        """
+        today = datetime.now().strftime('%Y-%m-%d')
+        
+        report = self.db.execute("""
+            SELECT 
+                c.id as customer_id,
+                c.customer_code,
+                c.customer_name,
+                COALESCE(SUM(i.total_amount), 0) as total_invoices,
+                COALESCE(SUM(p.amount), 0) as total_paid,
+                COALESCE(SUM(i.total_amount), 0) - COALESCE(SUM(p.amount), 0) as outstanding,
+                -- Current (0-30 days)
+                COALESCE(SUM(CASE 
+                    WHEN julianday(?) - julianday(i.due_date) <= 30 
+                    AND i.status != 'paid'
+                    THEN i.total_amount - COALESCE((SELECT SUM(amount) FROM payments WHERE invoice_id = i.id), 0)
+                    ELSE 0 
+                END), 0) as current,
+                -- 31-60 days
+                COALESCE(SUM(CASE 
+                    WHEN julianday(?) - julianday(i.due_date) BETWEEN 31 AND 60
+                    AND i.status != 'paid'
+                    THEN i.total_amount - COALESCE((SELECT SUM(amount) FROM payments WHERE invoice_id = i.id), 0)
+                    ELSE 0 
+                END), 0) as days_31_60,
+                -- 61-90 days
+                COALESCE(SUM(CASE 
+                    WHEN julianday(?) - julianday(i.due_date) BETWEEN 61 AND 90
+                    AND i.status != 'paid'
+                    THEN i.total_amount - COALESCE((SELECT SUM(amount) FROM payments WHERE invoice_id = i.id), 0)
+                    ELSE 0 
+                END), 0) as days_61_90,
+                -- 90+ days
+                COALESCE(SUM(CASE 
+                    WHEN julianday(?) - julianday(i.due_date) > 90
+                    AND i.status != 'paid'
+                    THEN i.total_amount - COALESCE((SELECT SUM(amount) FROM payments WHERE invoice_id = i.id), 0)
+                    ELSE 0 
+                END), 0) as days_90_plus
+            FROM customers c
+            LEFT JOIN invoices i ON c.id = i.customer_id
+            LEFT JOIN payments p ON i.id = p.invoice_id
+            WHERE i.status != 'draft'
+            GROUP BY c.id, c.customer_code, c.customer_name
+            HAVING outstanding > 0
+            ORDER BY outstanding DESC
+        """, (today, today, today, today))
+        
+        # Calculate totals
+        totals = {
+            'total_outstanding': 0,
+            'current': 0,
+            'days_31_60': 0,
+            'days_61_90': 0,
+            'days_90_plus': 0
+        }
+        
+        for row in report:
+            totals['total_outstanding'] += row['outstanding']
+            totals['current'] += row['current']
+            totals['days_31_60'] += row['days_31_60']
+            totals['days_61_90'] += row['days_61_90']
+            totals['days_90_plus'] += row['days_90_plus']
+        
+        return {
+            'customers': report,
+            'totals': totals,
+            'as_of': today
+        }
+
+    def get_invoice_status(self, invoice_id: int) -> dict:
+        """Get detailed invoice status with payment history.
+        
+        Args:
+            invoice_id: Invoice ID
+        
+        Returns:
+            Invoice status details
+        """
+        invoice = self.db.execute(
+            "SELECT * FROM invoices WHERE id = ?", (invoice_id,)
+        )
+        if not invoice:
+            raise ValueError(f"Invoice {invoice_id} not found")
+        
+        invoice = invoice[0]
+        
+        payments = self.db.execute("""
+            SELECT * FROM payments 
+            WHERE invoice_id = ?
+            ORDER BY payment_date DESC
+        """, (invoice_id,))
+        
+        total_paid = sum(p['amount'] for p in payments)
+        outstanding = invoice['total_amount'] - total_paid
+        
+        # Calculate days overdue
+        days_overdue = 0
+        if invoice['status'] not in ['Paid', 'draft']:
+            due_date = datetime.strptime(invoice['due_date'], '%Y-%m-%d')
+            today = datetime.now()
+            days_overdue = (today - due_date).days
+            if days_overdue < 0:
+                days_overdue = 0
+        
+        return {
+            'invoice': invoice,
+            'payments': payments,
+            'total_paid': total_paid,
+            'outstanding': outstanding,
+            'days_overdue': days_overdue,
+            'payment_history': [{
+                'date': p['payment_date'],
+                'amount': p['amount'],
+                'method': p['payment_method'],
+                'reference': p['reference_no']
+            } for p in payments]
+        }

@@ -38,6 +38,11 @@ class Operation:
 When user asks to view data, write a SQL query.
 Output format: SQL: <your query>
 
+CRITICAL RULE - ALWAYS USE SELECT *:
+When user asks to "show", "list", "display", "view" data or "show all" or "get all" - you MUST use SELECT * to return ALL columns.
+NEVER use "SELECT id" alone - that is useless and frustrates users.
+User wants to SEE the actual data, not just IDs.
+
 IMPORTANT SECURITY RULES:
 - NEVER use DROP, DELETE, ALTER, TRUNCATE, or UPDATE without explicit confirmation
 - Only use SELECT for read operations
@@ -46,12 +51,31 @@ IMPORTANT SECURITY RULES:
 - Validate numeric inputs are actually numbers
 - Check foreign key constraints before operations
 
+DATABASE SCHEMA - USE THESE EXACT COLUMN NAMES:
+- customers: id, customer_code, customer_name, contact_name, email, phone, address, credit_limit, payment_terms_days, is_active, created_at
+- items: id, item_code, item_name, description, unit_of_measure, category, unit_price, reorder_level, is_active, created_at
+- invoices: id, invoice_no, customer_id, invoice_date, due_date, status, total_amount, tax_amount, notes, created_by, created_at
+- invoice_items: id, invoice_id, item_id, quantity, unit_price, total_price
+- warehouses: id, warehouse_code, warehouse_name, location, is_active
+- inventory: id, item_id, warehouse_id, quantity, last_updated
+- payments: id, payment_no, invoice_id, customer_id, payment_date, amount, payment_method, reference_no, notes, created_by, created_at
+
+EXAMPLES:
+- "show all customers" -> SQL: SELECT * FROM customers
+- "show items" -> SQL: SELECT * FROM items
+- "show invoices" -> SQL: SELECT * FROM invoices
+- "list customers with name" -> SQL: SELECT customer_name, contact_name, email FROM customers
+- "show invoices for customer 2" -> SQL: SELECT * FROM invoices WHERE customer_id = 2
+- "invoices for customer id 1" -> SQL: SELECT * FROM invoices WHERE customer_id = 1
+- "show items with price > 500" -> SQL: SELECT * FROM items WHERE unit_price > 500
+
 ERP Context:
 - Items can be raw materials, finished goods, or packaging
 - BOM (Bill of Materials) defines production recipes
 - Work orders consume materials per BOM
 - Inventory movements track stock changes
 - Always check stock availability before production
+- Invoices reference customers by customer_id (foreign key to customers.id)
 
 That's it. No other text needed."""
     

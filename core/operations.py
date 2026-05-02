@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 from .database import Database
 from .llm_handler import LLMHandler
+from .invoice_state import InvoiceStateMachine, InvoiceState
 
 
 class Operation:

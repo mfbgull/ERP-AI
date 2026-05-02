@@ -151,6 +151,14 @@ def chat():
     if user_message.startswith("/"):
         return handle_command(user_message)
 
+    # Check if there's an active invoice flow
+    invoice_state = conversation.get_invoice_state(current_session)
+    if invoice_state and invoice_state.state.value != 'idle':
+        print(f"[CHAT] Using invoice flow (state: {invoice_state.state.value})")
+        result = operations.handle_invoice_flow(user_message, current_session, conversation)
+        conversation.add_message(current_session, "assistant", result)
+        return jsonify({"response": result, "session": current_session[:8]})
+
     try:
         conversation.add_message(current_session, "user", user_message)
 

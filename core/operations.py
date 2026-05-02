@@ -52,22 +52,78 @@ IMPORTANT SECURITY RULES:
 - Check foreign key constraints before operations
 
 DATABASE SCHEMA - USE THESE EXACT COLUMN NAMES:
-- customers: id, customer_code, customer_name, contact_name, email, phone, address, credit_limit, payment_terms_days, is_active, created_at
-- items: id, item_code, item_name, description, unit_of_measure, category, unit_price, reorder_level, is_active, created_at
-- invoices: id, invoice_no, customer_id, invoice_date, due_date, status, total_amount, tax_amount, notes, created_by, created_at
-- invoice_items: id, invoice_id, item_id, quantity, unit_price, total_price
-- warehouses: id, warehouse_code, warehouse_name, location, is_active
-- inventory: id, item_id, warehouse_id, quantity, last_updated
-- payments: id, payment_no, invoice_id, customer_id, payment_date, amount, payment_method, reference_no, notes, created_by, created_at
 
-EXAMPLES:
-- "show all customers" -> SQL: SELECT * FROM customers
-- "show items" -> SQL: SELECT * FROM items
-- "show invoices" -> SQL: SELECT * FROM invoices
-- "list customers with name" -> SQL: SELECT customer_name, contact_name, email FROM customers
-- "show invoices for customer 2" -> SQL: SELECT * FROM invoices WHERE customer_id = 2
-- "invoices for customer id 1" -> SQL: SELECT * FROM invoices WHERE customer_id = 1
-- "show items with price > 500" -> SQL: SELECT * FROM items WHERE unit_price > 500
+# Master Data
+- users: id, username, email, password_hash, full_name, role, is_active, created_at, updated_at
+- settings: id, key, value, description, updated_at
+
+# Inventory & Warehouse
+- items: id, item_code, item_name, description, category, unit_of_measure, current_stock, reorder_level, standard_cost, standard_selling_price, is_raw_material, is_finished_good, is_purchased, is_manufactured, is_active, created_by, created_at, updated_at
+- warehouses: id, warehouse_code, warehouse_name, location, is_active, created_at
+- stock_movements: id, movement_no, item_id, warehouse_id, movement_type, quantity, unit_cost, reference_doctype, reference_docno, remarks, movement_date, created_by, created_at
+- stock_balances: id, item_id, warehouse_id, quantity, last_updated
+
+# Suppliers & Procurement
+- suppliers: id, supplier_code, supplier_name, contact_person, email, phone, address, payment_terms, is_active, created_at, updated_at
+- purchase_orders: id, po_no, supplier_id, po_date, expected_delivery_date, status, total_amount, notes, warehouse_id, created_by, created_at, updated_at
+- purchase_order_items: id, po_id, item_id, quantity, received_quantity, unit_price, amount
+- goods_receipts: id, receipt_no, po_id, receipt_date, warehouse_id, remarks, created_by, created_at
+- goods_receipt_items: id, receipt_id, po_item_id, item_id, received_quantity
+
+# Customers & Sales
+- customers: id, customer_code, customer_name, contact_person, email, phone, billing_address, shipping_address, payment_terms, is_active, created_at, updated_at, credit_limit, current_balance, opening_balance, payment_terms_days
+- sales_orders: id, so_no, customer_id, so_date, delivery_date, status, total_amount, notes, warehouse_id, created_by, created_at, updated_at
+- sales_order_items: id, so_id, item_id, quantity, delivered_quantity, unit_price, amount
+
+# Invoices & Payments
+- invoices: id, invoice_no, customer_id, so_id, invoice_date, due_date, status, total_amount, paid_amount, balance_amount, notes, created_by, created_at, updated_at, discount_scope, discount_type, discount_value, terms
+- invoice_items: id, invoice_id, item_id, quantity, unit_price, amount, tax_rate, discount_type, discount_value
+- payments: id, payment_no, customer_id, invoice_id, payment_date, amount, payment_method, reference_no, notes, created_by, created_at
+- payment_allocations: id, payment_id, invoice_id, amount, created_at
+
+# Manufacturing
+- boms: id, bom_no, bom_name, finished_item_id, quantity, description, is_active, created_by, created_at, updated_at
+- bom_items: id, bom_id, item_id, quantity, created_at
+- work_orders: id, wo_no, bom_id, finished_item_id, planned_quantity, produced_quantity, status, start_date, expected_completion_date, actual_completion_date, warehouse_id, notes, created_by, created_at, updated_at
+- material_consumption: id, wo_id, item_id, consumed_quantity, consumption_date, created_by, created_at
+- productions: id, production_no, output_item_id, output_quantity, warehouse_id, production_date, remarks, created_by, created_at, updated_at, bom_id, raw_materials_warehouse_id
+- production_inputs: id, production_id, item_id, quantity, warehouse_id
+
+# Expenses
+- expenses: id, expense_no, expense_category, description, amount, expense_date, payment_method, reference_no, vendor_name, project, status, created_by, created_at, updated_at
+- expense_categories: id, category_name, description, is_active, created_at, updated_at
+
+# Ledgers
+- customer_ledger: id, customer_id, transaction_date, transaction_type, reference_no, debit, credit, balance, description, created_at
+- supplier_ledger: id, supplier_id, transaction_date, transaction_type, reference_no, debit, credit, balance, description, created_at
+- activity_log: id, user_id, action, entity_type, entity_id, description, created_at, log_level, ip_address, user_agent, metadata, duration_ms
+
+# Other
+- purchases: id, purchase_no, item_id, warehouse_id, quantity, unit_cost, total_cost, supplier_name, purchase_date, invoice_no, remarks, created_by, created_at, updated_at
+- sales: id, sale_no, item_id, warehouse_id, quantity, unit_price, total_amount, customer_name, sale_date, invoice_no, remarks, created_by, created_at, updated_at
+- invoice_drafts: id, session_id, customer_id, invoice_date, due_date, terms, notes, items_data, status, created_at, updated_at, expires_at
+- tax_rates: id, name, rate, description, is_default, is_active, created_at, updated_at
+- payment_terms: id, name, days, description, is_default, is_active, created_at, updated_at
+
+EXAMPLES - ALWAYS use these exact table names:
+- "show all customers" -> SELECT * FROM customers
+- "show items" -> SELECT * FROM items
+- "show invoices" -> SELECT * FROM invoices
+- "show all expenses" -> SELECT * FROM expenses
+- "show all suppliers" -> SELECT * FROM suppliers
+- "show all stock movements" -> SELECT * FROM stock_movements
+- "show all work orders" -> SELECT * FROM work_orders
+- "show all productions" -> SELECT * FROM productions
+- "show all purchase orders" -> SELECT * FROM purchase_orders
+- "show all sales orders" -> SELECT * FROM sales_orders
+- "show pending invoices" -> SELECT * FROM invoices WHERE status = 'pending'
+- "show expenses for May 2026" -> SELECT * FROM expenses WHERE expense_date LIKE '2026-05%'
+- "show invoices for customer 2" -> SELECT * FROM invoices WHERE customer_id = 2
+- "total revenue" -> SELECT SUM(total_amount) as total FROM invoices WHERE status = 'Paid'
+
+CRITICAL: For "show all [table]" queries, use SELECT * FROM [table] with NO WHERE clause.
+The user wants to see ALL records, not a filtered subset.
+Only add WHERE when the user explicitly mentions a filter condition.
 
 ERP Context:
 - Items can be raw materials, finished goods, or packaging

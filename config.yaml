@@ -12,7 +12,7 @@ llama_cpp:
 ollama:
   enabled: true
   host: localhost
-  model: gemma3:1b
+  model: qwen3.5:2b
   port: 11434
   timeout: 120
 system:

@@ -725,3 +725,155 @@ That's it. No other text needed."""
                 'reference': p['reference_no']
             } for p in payments]
         }
+    
+    def search_customers(self, name: str) -> list:
+        query = """
+            SELECT id, customer_code, customer_name, contact_person, email, phone
+            FROM customers 
+            WHERE customer_name LIKE ? AND is_active = 1
+            LIMIT 10
+        """
+        return self.db.execute(query, (f'%{name}%',))
+    
+    def get_warehouses(self) -> list:
+        query = "SELECT id, warehouse_code, warehouse_name, location FROM warehouses WHERE is_active = 1"
+        return self.db.execute(query)
+    
+    def search_items(self, name: str) -> list:
+        query = """
+            SELECT id, item_code, item_name, description, standard_selling_price, unit_of_measure
+            FROM items 
+            WHERE item_name LIKE ? AND is_active = 1
+            LIMIT 10
+        """
+        return self.db.execute(query, (f'%{name}%',))
+    
+    def get_invoice_summary(self, draft_id: int) -> dict:
+        draft = self.db.execute("SELECT * FROM invoice_drafts WHERE id = ?", (draft_id,))
+        if not draft:
+            return None
+        items_data = json.loads(draft[0]['items_data'] or '{"items": []}')
+        customer = self.db.execute("SELECT customer_name FROM customers WHERE id = ?", (draft[0]['customer_id'],))
+        return {
+            'draft_id': draft_id,
+            'customer': customer[0]['customer_name'] if customer else 'Unknown',
+            'items': items_data.get('items', []),
+            'subtotal': items_data.get('subtotal', 0),
+            'tax': items_data.get('tax_amount', 0),
+            'total': items_data.get('total', 0),
+            'item_count': len(items_data.get('items', []))
+        }
+    
+    def handle_invoice_flow(self, user_input: str, session_id: str, conversation) -> str:
+        from core.intent_extractor import IntentExtractor
+        from core.invoice_state import InvoiceState, InvoiceStateMachine
+        
+        invoice_state = conversation.get_invoice_state(session_id)
+        if invoice_state is None:
+            invoice_state = InvoiceStateMachine()
+            conversation.update_context(session_id, invoice_state=invoice_state)
+        
+        if invoice_state.is_expired():
+            invoice_state.reset()
+        
+        intent_data = IntentExtractor.extract_intent(user_input)
+        intent = intent_data['intent']
+        entities = intent_data['entities']
+        
+        if invoice_state.state == InvoiceState.IDLE:
+            if intent == 'create_invoice':
+                customer_name = entities.get('customer_name')
+                if not customer_name:
+                    return "Which customer is this invoice for? (Enter customer name)"
+                customers = self.search_customers(customer_name)
+                if not customers:
+                    return f"No customer found with '{customer_name}'. Try a different name or say 'list customers' to see all."
+                if len(customers) == 1:
+                    invoice_state.customer_id = customers[0]['id']
+                    invoice_state.customer_name = customers[0]['customer_name']
+                    invoice_state.state = InvoiceState.SELECTING_WAREHOUSE
+                    warehouses = self.get_warehouses()
+                    wh_list = '\n'.join([f"  {w['id']}. {w['warehouse_name']} ({w['warehouse_code']})" for w in warehouses])
+                    return f"Customer: {invoice_state.customer_name}\n\nSelect warehouse:\n{wh_list}\n\nOr say warehouse name (default: warehouse 1)"
+                else:
+                    invoice_state.state = InvoiceState.SELECTING_CUSTOMER
+                    invoice_state.customer_name = customer_name
+                    options = '\n'.join([f"  {c['id']}. {c['customer_name']} ({c['customer_code']})" for c in customers])
+                    return f"Multiple customers found:\n{options}\n\nEnter the customer ID to select:"
+            elif intent == 'list_customers':
+                customers = self.search_customers('')
+                if not customers:
+                    return "No customers found."
+                return "Available customers:\n" + '\n'.join([f"  {c['id']}. {c['customer_name']} ({c['customer_code']})" for c in customers[:10]])
+            return "Say 'create invoice for [customer name]' to start a new invoice."
+        
+        elif invoice_state.state == InvoiceState.SELECTING_CUSTOMER:
+            if intent == 'select_option':
+                option_id = entities.get('option_id')
+                customers = self.search_customers(invoice_state.customer_name or '')
+                selected = next((c for c in customers if c['id'] == option_id), None)
+                if not selected:
+                    return "Invalid selection. Enter a valid customer ID."
+                invoice_state.customer_id = selected['id']
+                invoice_state.customer_name = selected['customer_name']
+                invoice_state.state = InvoiceState.SELECTING_WAREHOUSE
+                warehouses = self.get_warehouses()
+                wh_list = '\n'.join([f"  {w['id']}. {w['warehouse_name']} ({w['warehouse_code']})" for w in warehouses])
+                return f"Customer: {invoice_state.customer_name}\n\nSelect warehouse:\n{wh_list}\n\nOr say warehouse name (default: warehouse 1)"
+            return "Please enter the customer ID number."
+        
+        elif invoice_state.state == InvoiceState.SELECTING_WAREHOUSE:
+            if intent == 'select_option':
+                warehouse_id = entities.get('option_id')
+                warehouses = self.get_warehouses()
+                selected = next((w for w in warehouses if w['id'] == warehouse_id), None)
+                invoice_state.warehouse_id = selected['id'] if selected else 1
+            elif entities.get('warehouse_name'):
+                warehouses = self.get_warehouses()
+                selected = next((w for w in warehouses if entities['warehouse_name'].lower() in w['warehouse_name'].lower()), None)
+                invoice_state.warehouse_id = selected['id'] if selected else 1
+            else:
+                invoice_state.warehouse_id = 1
+            
+            draft = self.create_invoice_draft(invoice_state.customer_id, invoice_state.customer_name, invoice_state.warehouse_id)
+            invoice_state.draft_id = draft['draft_id']
+            invoice_state.state = InvoiceState.ADDING_ITEMS
+            return f"Invoice draft created for {invoice_state.customer_name}.\n\nWhat items? (Enter item name and quantity, e.g., '5 Widget A')"
+        
+        elif invoice_state.state == InvoiceState.ADDING_ITEMS:
+            if intent == 'done':
+                return self._finalize_invoice_flow(invoice_state, conversation, session_id)
+            if intent == 'list_items':
+                items = self.search_items('')
+                if not items:
+                    return "No items found."
+                return "Available items:\n" + '\n'.join([f"  {i['id']}. {i['item_name']} ({i['item_code']}) - ${i['standard_selling_price']}" for i in items[:10]])
+            
+            item_name = entities.get('item_name')
+            quantity = entities.get('quantity', 1)
+            if not item_name:
+                return "Please provide item name and quantity (e.g., '5 Widget A')."
+            
+            items = self.search_items(item_name)
+            if not items:
+                return f"Item '{item_name}' not found. Say 'list items' to see available items."
+            
+            if len(items) == 1:
+                self.add_item_to_draft(invoice_state.draft_id, items[0]['id'], quantity)
+                invoice_state.items_count += 1
+            else:
+                options = '\n'.join([f"  {i['id']}. {i['item_name']} ({i['item_code']}) - ${i['standard_selling_price']}" for i in items])
+                return f"Multiple items found:\n{options}\n\nEnter the item ID to select:"
+            
+            summary = self.get_invoice_summary(invoice_state.draft_id)
+            return f"Added {quantity} x {items[0]['item_name']}\n\nCurrent total: ${summary['total']:.2f} ({summary['item_count']} items)\n\nAnything else? (Add more items or say 'done' to finalize)"
+        
+        return "Say 'create invoice for [customer name]' to start a new invoice."
+    
+    def _finalize_invoice_flow(self, invoice_state, conversation, session_id) -> str:
+        if not invoice_state.draft_id:
+            return "No invoice in progress. Say 'create invoice' to start."
+        result = self.finalize_invoice(invoice_state.draft_id)
+        invoice_state.reset()
+        conversation.update_context(session_id, invoice_state=InvoiceStateMachine())
+        return f"Invoice created successfully!\n\nInvoice No: {result['invoice_no']}\nCustomer: {result['customer_name']}\nTotal: ${result['total_amount']:.2f}\nStatus: {result['status']}"

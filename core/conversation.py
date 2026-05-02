@@ -2,6 +2,7 @@ import json
 import uuid
 from datetime import datetime
 from .database import Database
+from .invoice_state import InvoiceStateMachine
 
 
 class ConversationEngine:
@@ -21,7 +22,8 @@ class ConversationEngine:
             'last_operation_id': None,
             'warehouse_id': 1,
             'user_id': 1,
-            'conversation_history': []
+            'conversation_history': [],
+            'invoice_state': InvoiceStateMachine()
         }
         return session_id
     
@@ -67,3 +69,11 @@ class ConversationEngine:
             parts.append(f"Last operation: {ctx['last_operation']}")
         
         return ", ".join(parts) if parts else "No active context"
+    
+    def get_invoice_state(self, session_id: str):
+        ctx = self.sessions.get(session_id, {})
+        return ctx.get('invoice_state')
+    
+    def reset_invoice_state(self, session_id: str):
+        if session_id in self.sessions:
+            self.sessions[session_id]['invoice_state'] = InvoiceStateMachine()
